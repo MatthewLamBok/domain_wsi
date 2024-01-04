@@ -127,7 +127,7 @@ if __name__ == "__main__":
     root_path = "/home/mlam/Documents/Research_Project/images_data/Output_clam_grey_images/FEATURES_DIRECTORY_BW_256_v3__KimiaNet_greyscale_True_pretrained_output_ch_1/images/"  # Change this to your actual data directory
     csv_path = "/home/mlam/Documents/Research_Project/images_data/Output_clam_grey_images/FEATURES_DIRECTORY_BW_256_v3__KimiaNet_greyscale_True_pretrained_output_ch_1/filtered_images_clean.csv"  # Change this to your actual csv file path
     split_path = "/home/mlam/Documents/Research_Project/images_data/Output_clam_grey_images/splits/task_2_tumor_subtyping_100_all/"
-    split_path = 5 #fold number
+
   
     # Create dataset instances
     train_dataset = Feature_bag_dataset(root=root_path, csv_path=csv_path, split_path=split_path, fold_num=0, split="train")
