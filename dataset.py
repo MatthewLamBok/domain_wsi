@@ -62,3 +62,75 @@ class Instance_Dataset(Dataset):
         img = self.patch_transform(img).unsqueeze(0)
         return img, coord, self.slide_id
 
+class Instance_Dataset_greyscale_output_channel_1(Dataset):
+    """
+    Dataset enumerating patches of a slide
+
+    Args:
+        Dataset (s): _description_
+    """
+    def __init__(self, wsi, slide_path, slide_id) -> None:
+        self.wsi = wsi
+        self.slide_id = slide_id
+        # Add Grayscale transformation here
+        self.patch_transform = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Grayscale(num_output_channels=1),  # Convert image to grayscale
+                transforms.Normalize(mean=[0.485], std=[0.229])  # Update the mean and std for single channel
+            ]
+        )
+        self.slide_path = slide_path
+        with h5py.File(self.slide_path, 'r') as f:
+            patch_dataset = f['coords']
+            self.patch_level = f['coords'].attrs['patch_level']
+            self.patch_size = f['coords'].attrs['patch_size']
+            self.length = len(patch_dataset)
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        with h5py.File(self.slide_path, 'r') as f:
+            coord = f['coords'][idx]
+            coord = torch.from_numpy(coord)
+        img = self.wsi.read_region(coord, self.patch_level, (self.patch_size, self.patch_size)).convert('RGB')
+        img = self.patch_transform(img).unsqueeze(0)
+        return img, coord, self.slide_id
+
+
+class Instance_Dataset_greyscale_output_channel_3(Dataset):
+    """
+    Dataset enumerating patches of a slide
+
+    Args:
+        Dataset (s): _description_
+    """
+    def __init__(self, wsi, slide_path, slide_id) -> None:
+        self.wsi = wsi
+        self.slide_id = slide_id
+        # Add Grayscale transformation here
+        self.patch_transform = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Grayscale(num_output_channels=3),  # Convert image to grayscale
+                transforms.Normalize(mean = (0.485, 0.456, 0.406), std = (0.229, 0.224, 0.225))  # Update the mean and std for single channel
+            ]
+        )
+        self.slide_path = slide_path
+        with h5py.File(self.slide_path, 'r') as f:
+            patch_dataset = f['coords']
+            self.patch_level = f['coords'].attrs['patch_level']
+            self.patch_size = f['coords'].attrs['patch_size']
+            self.length = len(patch_dataset)
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, idx):
+        with h5py.File(self.slide_path, 'r') as f:
+            coord = f['coords'][idx]
+            coord = torch.from_numpy(coord)
+        img = self.wsi.read_region(coord, self.patch_level, (self.patch_size, self.patch_size)).convert('RGB')
+        img = self.patch_transform(img).unsqueeze(0)
+        return img, coord, self.slide_id

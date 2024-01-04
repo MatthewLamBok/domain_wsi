@@ -2,7 +2,8 @@
 Training and logging utilities 
 """
 import os
-
+import pandas as pd
+import seaborn as sns
 import h5py
 import matplotlib.pyplot as plt
 import numpy as np
@@ -39,9 +40,9 @@ def create_model(args, device, feature_dim=1024):
         else:
             instance_loss_fn = nn.CrossEntropyLoss()
         if args.model == "CLAM-SB":
-            model = clam.CLAM_SB(n_classes = args.n_classes, subtyping=True, instance_loss_fn=instance_loss_fn, dropout=args.drop_out,feature_dim=feature_dim)
+            model = clam.CLAM_SB(n_classes = args.n_classes, k_sample=args.k_sample_CLAM, subtyping=True, instance_loss_fn=instance_loss_fn, dropout=args.drop_out,feature_dim=feature_dim)
         elif args.model == "CLAM-MB":
-            model = clam.CLAM_MB(n_classes = args.n_classes, subtyping=True, instance_loss_fn=instance_loss_fn, dropout=args.drop_out,feature_dim=feature_dim)
+            model = clam.CLAM_MB(n_classes = args.n_classes, k_sample=args.k_sample_CLAM, subtyping=True, instance_loss_fn=instance_loss_fn, dropout=args.drop_out,feature_dim=feature_dim)
     elif args.model == "TransMIL":
         model = TransMIL.TransMIL(args.n_classes, device,feature_dim=feature_dim)
     return model
@@ -508,6 +509,41 @@ def validate_transmil(epoch, model, loader, n_classes=5, writer = None, loss_fn 
 
     return False
 
+def compute_class_metrics(all_labels, all_preds, n_classes):
+    metrics = {'TP': [], 'TN': [], 'FP': [], 'FN': []}
+
+    for c in range(n_classes):
+        tp = np.sum((all_labels == c) & (all_preds == c))
+        tn = np.sum((all_labels != c) & (all_preds != c))
+        fp = np.sum((all_labels != c) & (all_preds == c))
+        fn = np.sum((all_labels == c) & (all_preds != c))
+        
+        metrics['TP'].append(tp)
+        metrics['TN'].append(tn)
+        metrics['FP'].append(fp)
+        metrics['FN'].append(fn)
+
+    return metrics
+
+def compute_class_metrics_percentage(all_labels, all_preds, n_classes):
+    metrics = {'TP (%)': [], 'TN (%)': [], 'FP (%)': [], 'FN (%)': []}
+
+    for c in range(n_classes):
+        tp = np.sum((all_labels == c) & (all_preds == c))
+        tn = np.sum((all_labels != c) & (all_preds != c))
+        fp = np.sum((all_labels != c) & (all_preds == c))
+        fn = np.sum((all_labels == c) & (all_preds != c))
+        
+        total_actual_positives = np.sum(all_labels == c)
+        total_actual_negatives = np.sum(all_labels != c)
+        
+        metrics['TP (%)'].append((tp / total_actual_positives if total_actual_positives != 0 else 0) * 100)
+        metrics['TN (%)'].append((tn / total_actual_negatives if total_actual_negatives != 0 else 0) * 100)
+        metrics['FP (%)'].append((fp / total_actual_negatives if total_actual_negatives != 0 else 0) * 100)
+        metrics['FN (%)'].append((fn / total_actual_positives if total_actual_positives != 0 else 0) * 100)
+
+    return metrics
+
 
 def summary(model, loader, n_classes, device, model_type="CLAM-SB", conf_matrix_path = None, save_pred=None):
     """_summary_
@@ -555,6 +591,25 @@ def summary(model, loader, n_classes, device, model_type="CLAM-SB", conf_matrix_
         conf_matrix = confusion_matrix(all_labels,all_pred_labels)
         a = ConfusionMatrixDisplay(conf_matrix).plot()
         plt.savefig(fname = conf_matrix_path)
+
+
+        class_metrics = compute_class_metrics(all_labels, all_pred_labels, n_classes)
+        df_metrics = pd.DataFrame(class_metrics)
+        plt.figure(figsize=(10, 7))
+        sns.heatmap(df_metrics, annot=True, cmap='Blues', fmt='g', linewidths=.5)
+        plt.title('Metrics for Each Class')
+        plt.yticks(rotation=0)  # Keeps the class labels horizontal
+        plt.savefig(fname = os.path.dirname(conf_matrix_path)+'/metrics_table_fold.png' )
+
+        class_metrics = compute_class_metrics_percentage(all_labels, all_pred_labels, n_classes)
+        df_metrics = pd.DataFrame(class_metrics)
+        plt.figure(figsize=(10, 7))
+        sns.heatmap(df_metrics, annot=True, cmap='Blues', fmt='.2f', linewidths=.5)
+        plt.title('Metrics for Each Class (in Percentage)')
+        plt.yticks(rotation=0)  # Keeps the class labels horizontal
+        plt.savefig(fname = os.path.dirname(conf_matrix_path) +'/metrics_table_fold_percentage.png' )
+
+
     if n_classes == 2:
         auc = roc_auc_score(all_labels, all_probs[:, 1])
         aucs = []

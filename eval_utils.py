@@ -2,8 +2,9 @@
 Utililies for evaluation
 """
 import argparse
-import netcal.metrics as networkcal_metrics
-import netcal.presentation as networkcal_pres
+import netcal_lib.metrics as networkcal_metrics
+from sklearn.calibration import calibration_curve
+#import netcal_lib.presentation as networkcal_pres
 import torch
 from utils import *
 import numpy as np
@@ -31,6 +32,7 @@ def confidence_eval(args, model, dataloader, device, n_bins=20):
     ece = networkcal_metrics.ECE(n_bins)
     ece_measure = ece.measure(confidence, ground_truth)
     # Reliability Diagram
-    diagram = networkcal_pres.ReliabilityDiagram(n_bins)
-    return ground_truth, confidence, ece_measure, diagram
+    #diagram = networkcal_pres.ReliabilityDiagram(n_bins)
+    
+    return ground_truth, confidence, ece_measure #, diagram
 

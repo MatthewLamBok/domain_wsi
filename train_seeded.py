@@ -33,6 +33,7 @@ def main(args):
         writer = SummaryWriter(args.log_dir)
         loss_fn = torch.nn.CrossEntropyLoss()
 
+        
         for data_seed in range(args.data_seeds):
             seed_numpy(data_seed)
             train_dataset = dataset.Feature_bag_dataset(root=path, csv_path = data_csv, split = 'train')
@@ -121,7 +122,7 @@ parser.add_argument('--name', type=str, required=True)
 parser.add_argument('--n_classes', type=int, required=True)
 parser.add_argument("--feat_dir", type=str, required=True)
 parser.add_argument("--csv_path", type=str, required=True)
-parser.add_argument("--feature_model", type=str, choices=["ResNet","KimiaNet","DenseNet","efficientnet_b0","efficientnet_b1","efficientnet_b2","efficientnet_b3","efficientnet_b4","efficientnet_b5","efficientnet_b6","efficientnet_b7",'efficientnet_v2_s','efficientnet_v2_m','efficientnet_v2_l','convnext_tiny','convnext_small','convnext_base','convnext_large', "convunext"],default="ResNet")
+parser.add_argument("--feature_model", type=str, choices=["ResNet","KimiaNet","DenseNet","efficientnet_b0","efficientnet_b1","efficientnet_b2","efficientnet_b3","efficientnet_b4","efficientnet_b5","efficientnet_b6","efficientnet_b7",'efficientnet_v2_s','efficientnet_v2_m','efficientnet_v2_l','convnext_tiny','convnext_small','convnext_base','convnext_large', "convunext"],default="KimiaNet")
 parser.add_argument("--model", type=str, choices=["CLAM-SB","CLAM-MB","TransMIL"],default="CLAM-SB")
 parser.add_argument("--bag_loss", type=str, default="cross-entropy")
 parser.add_argument('--instance_loss', type=str, default="svm")
@@ -129,15 +130,14 @@ parser.add_argument('--epochs', type=int, default=200)
 parser.add_argument('--lr', type=float, default=2e-4)
 parser.add_argument("--bag_weight", type=float, default=0.7)
 parser.add_argument('--weight_decay', type=float, default=1e-5)
-parser.add_argument('--opt', type=str, default="lookahead_radam")
+parser.add_argument('--opt', type=str, default="lookahead_adamw")
 parser.add_argument("--early_stopping", action='store_true', default=False)
 parser.add_argument("--result_dir", type=str, default=None)
 parser.add_argument('--log_dir', type=str, default=None)
-parser.add_argument('--drop_out',action="store_true",default=False)
+parser.add_argument('--drop_out',action="store_true", default=False)
 parser.add_argument("--bins", type=int, default=20)
 parser.add_argument("--data_seeds", type=int, default=5)
 parser.add_argument("--model_seeds", type=int, default=3)
-
 args = parser.parse_args()
 
 if __name__ == "__main__":
