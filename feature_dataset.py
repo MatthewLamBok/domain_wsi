@@ -13,7 +13,7 @@ class Feature_bag_dataset(Dataset):
     """
     Dataloader for Features at slide level
     """
-    def __init__(self,root, csv_path, split_path = False, fold_num = None, split = None, num_classes=3) -> None:
+    def __init__(self,root, csv_path, split_path = False, fold_num = None, split = None, num_classes=3, class_name="") -> None:
         """_summary_
 
         Args:
@@ -24,15 +24,37 @@ class Feature_bag_dataset(Dataset):
         """
         super(Feature_bag_dataset,self).__init__()
         df = pd.read_csv(csv_path)
-
-        df = df[[ "slide_id", "Label"]]
-        label_dict = {'Benign':0, 'Hyperplasia':1, 'Neoplasia':2}
-        df['Label'] = df['Label'].map(label_dict)
+        label_dict = {}
+        if class_name != "":
+            if class_name == 'Hyperplasia':
+                df = df.loc[df['Label'] == class_name]
+                label_dict = {'atypical_hyperplasia':0, 'hyperplasia_no_atypia':1}
+            elif class_name == 'Neoplasia':
+                df = df.loc[df['Label'] == class_name]
+                label_dict = {'endometrioid_adenocarcinoma':0, 'serous_carcinoma':1}
+            elif class_name == 'Benign':
+                df = df.loc[df['Label'] == class_name]
+                label_dict = {'atrophic_endometrium':0, 'proliferative_endometrium':1, 'secretory_endometrium': 2}
+            elif class_name == 'all':
+                label_dict = {'atrophic_endometrium':0,
+                              'proliferative_endometrium':1,
+                              'secretory_endometrium': 2,
+                              'atypical_hyperplasia':3,
+                              'hyperplasia_no_atypia':4,
+                              'endometrioid_adenocarcinoma':5,
+                              'serous_carcinoma':6
+                              }
+            
+        df = df[[ "slide_id", "Sublabel"]]
+        # print(df.head)
+        df['Sublabel'] = df['Sublabel'].map(label_dict)
         self.df = df
         self.df = self.df.sample(frac=1).reset_index(drop=True)
 
         self.root = root
         self.split = split
+        # print("Split: ")
+        # print(split)
         
     
         if split_path:
@@ -51,7 +73,7 @@ class Feature_bag_dataset(Dataset):
         path_slide = os.path.join(self.root, str(self.df['slide_id'][idx]))
         features = torch.concat([torch.load(os.path.join(path_slide,file), map_location=torch.device('cpu'))['features'] for file in os.listdir(path_slide)])
         #print(path_slide, self.df['slide_id'][idx], features.shape)
-        return features, torch.tensor(self.df['Label'][idx])
+        return features, torch.tensor(self.df['Sublabel'][idx])
 
 
     def split_dataset(self):
@@ -115,10 +137,10 @@ class Feature_bag_dataset(Dataset):
     def cls_slide_id_prep(self):
         self.slide_cls_ids = [[] for i in range(self.num_classes)]
         for i in range(self.num_classes):
-            self.slide_cls_ids[i] = np.where(self.df['Label'] == i)[0]
+            self.slide_cls_ids[i] = np.where(self.df['Sublabel'] == i)[0]
     
     def getlabel(self, ids):
-        return self.df['Label'][ids]
+        return self.df['Sublabel'][ids]
 
 
 

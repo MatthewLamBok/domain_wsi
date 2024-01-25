@@ -59,7 +59,8 @@ def main(args):
         os.makedirs(args.log_dir)
     os.environ['WANDB_DIR'] = args.log_dir
     wandb.login()
-    with wandb.init(project= args.name, config=vars(args), sync_tensorboard=True):
+    job_type = str.lower(args.class_name) + '_subclassification'
+    with wandb.init(project= args.name, config=vars(args), sync_tensorboard=True, mode='offline', group="default_params", job_type=job_type):
         stime = time.time()
         path = args.feat_dir
         data_csv = args.csv_path
@@ -77,16 +78,16 @@ def main(args):
 
         for data_seed in range(loop):
             print(args.cross_val)
-            seed_numpy(data_seed)            
+            seed_numpy(data_seed)
             
             if args.cross_val == 'True':
-                train_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, split="train")
-                val_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, split="val")
-                test_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, split="test")
+                train_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, split="train", num_classes = args.n_classes, class_name = args.class_name)
+                val_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, split="val", num_classes = args.n_classes, class_name = args.class_name)
+                test_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, split="test", num_classes = args.n_classes, class_name = args.class_name)
             elif args.cross_val == 'False':
-                train_dataset = dataset.Feature_bag_dataset(root=path, csv_path = data_csv, split = 'train')
-                val_dataset = dataset.Feature_bag_dataset(root=path,csv_path = data_csv, split='val')
-                test_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split='test')
+                train_dataset = dataset.Feature_bag_dataset(root=path, csv_path = data_csv, split = 'train', num_classes = args.n_classes, class_name = args.class_name)
+                val_dataset = dataset.Feature_bag_dataset(root=path,csv_path = data_csv, split='val', num_classes = args.n_classes, class_name = args.class_name)
+                test_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split='test', num_classes = args.n_classes, class_name = args.class_name)
             
             weights = make_weights_for_balanced_classes_split(train_dataset)
             train_dataloader = DataLoader(train_dataset, num_workers=4, sampler = WeightedRandomSampler(weights,len(weights)))  
@@ -106,6 +107,9 @@ def main(args):
                 result_dir = os.path.join(args.result_dir,'exp_'+str(data_seed)+'_'+str(model_seed))
                 os.makedirs(result_dir, exist_ok=True)
                 exp_idx = (model_seed+1) + (data_seed*3)
+                print("Early stopping")
+                print(args.early_stopping)
+                
                 if args.early_stopping:
                     early_stopping = EarlyStopping(patience = 40, stop_epoch=20, verbose = True)
                 else:
@@ -147,10 +151,11 @@ def main(args):
                 #diagram.plot(confidence, ground_truth, filename=os.path.join(result_dir,"diagram.jpg"))
                 
                 for i in range(args.n_classes):
-                    print('class {}: auc: {}'.format(i,aucs[i]))
+                    if len(aucs) > 0:
+                        print('class {}: auc: {}'.format(i,aucs[i]))
 
-                    if writer and aucs[i] is not None:
-                        writer.add_scalar('final/test_class_{}_auc'.format(i), aucs[i], exp_idx)
+                        if writer and aucs[i] is not None:
+                            writer.add_scalar('final/test_class_{}_auc'.format(i), aucs[i], exp_idx)
 
                 for i in range(args.n_classes):
                     acc, correct, count = acc_logger.get_summary(i)
@@ -198,6 +203,9 @@ parser.add_argument("--model_seeds", type=int, default=3)
 #Cross Validation
 parser.add_argument("--split_path", type=str, default=None) 
 parser.add_argument("--cross_val", type=str, default="False", choices=["False","True"])
+
+# Subclassification
+parser.add_argument("--class_name", type=str, default="all")
 
 args = parser.parse_args()
 

@@ -176,11 +176,11 @@ def make_weights_for_balanced_classes_split(dataset):
         weight (torch.DoubleTensor): weights
     """
     N = float(len(dataset))                                           
-    weight_per_class = [N/len(dataset.slide_cls_ids[c]) for c in range(len(dataset.slide_cls_ids))]                                                                                                     
+    weight_per_class = [N/len(dataset.slide_cls_ids[c]) for c in range(len(dataset.slide_cls_ids))]
     weight = [0] * int(N)                                           
     for idx in range(len(dataset)):   
         y = dataset.getlabel(idx)                        
-        weight[idx] = weight_per_class[y]                                  
+        weight[idx] = weight_per_class[y]
     return torch.DoubleTensor(weight)
 
 def train_loop_clam(epoch, model, loader, optimizer, n_classes=5, bag_weight=0.7, writer = None, loss_fn = nn.CrossEntropyLoss(), device = torch.device('cpu')):
@@ -571,6 +571,10 @@ def summary(model, loader, n_classes, device, model_type="CLAM-SB", conf_matrix_
 
 
     for batch_idx, (data, label) in enumerate(loader):
+        # print("Batch id: ")
+        # print(batch_idx)
+        # print("Label: ")
+        # print(label)
         data, label = data.to(device), label.to(device)
         with torch.no_grad():
             if model_type == "CLAM-SB" or model_type=="CLAM-MB":
