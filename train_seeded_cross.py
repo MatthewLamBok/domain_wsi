@@ -65,7 +65,21 @@ def main(args):
         data_csv = args.csv_path
         device = torch.device(torch.cuda.current_device()) if torch.cuda.is_available()  else torch.device("cpu")
         writer = SummaryWriter(args.log_dir)
-        loss_fn = torch.nn.CrossEntropyLoss()
+        if args.n_classes == 3:
+            weight_loss_dict = {
+                "50:50": {"Class 1": 0.33, "Class 2": 0.33, "Class 3": 0.34},
+                "45:55": {"Class 1": 0.30, "Class 2": 0.35, "Class 3": 0.35},
+                "60:40": {"Class 1": 0.25, "Class 2": 0.375, "Class 3": 0.375},
+                "65:35": {"Class 1": 0.20, "Class 2": 0.40, "Class 3": 0.40},
+                "70:30": {"Class 1": 0.15, "Class 2": 0.40, "Class 3": 0.40},
+                "5_per_Neo": {"Class 1": 0.31, "Class 2": 0.38, "Class 3": 0.31},
+            } 
+            weight_loss = list(weight_loss_dict['50:50'].values())
+        if args.n_classes == 2:
+            weight_loss= [1.0000, 1.0000]
+        weight_loss=torch.tensor(weight_loss,dtype=torch.float).to(device)
+        print (weight_loss)
+        loss_fn = torch.nn.CrossEntropyLoss(weight=weight_loss)
 
         print("args.cross_val:", args.cross_val)
         if args.cross_val == 'True':
@@ -80,13 +94,13 @@ def main(args):
             seed_numpy(data_seed)            
             
             if args.cross_val == 'True':
-                train_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, split="train")
-                val_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, split="val")
-                test_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, split="test")
+                train_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, Main_or_Sub_label = args.Main_or_Sub_label, split="train", num_classes=args.n_classes)
+                val_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, Main_or_Sub_label = args.Main_or_Sub_label, split="val", num_classes=args.n_classes)
+                test_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, Main_or_Sub_label = args.Main_or_Sub_label, split="test", num_classes=args.n_classes)
             elif args.cross_val == 'False':
-                train_dataset = dataset.Feature_bag_dataset(root=path, csv_path = data_csv, split = 'train')
-                val_dataset = dataset.Feature_bag_dataset(root=path,csv_path = data_csv, split='val')
-                test_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split='test')
+                train_dataset = dataset.Feature_bag_dataset(root=path, csv_path = data_csv, Main_or_Sub_label = args.Main_or_Sub_label, split = 'train', num_classes=args.n_classes)
+                val_dataset = dataset.Feature_bag_dataset(root=path,csv_path = data_csv, Main_or_Sub_label = args.Main_or_Sub_label, split='val', num_classes=args.n_classes)
+                test_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, Main_or_Sub_label = args.Main_or_Sub_label, split='test', num_classes=args.n_classes)
             
             weights = make_weights_for_balanced_classes_split(train_dataset)
             train_dataloader = DataLoader(train_dataset, num_workers=4, sampler = WeightedRandomSampler(weights,len(weights)))  
@@ -113,7 +127,7 @@ def main(args):
                 for epoch in range(args.epochs):
                     if args.model == "CLAM-SB" or args.model == "CLAM-MB":
                         print(f"Starting Training {epoch}")
-                        train_loop_clam(epoch,model,train_dataloader,optimizer,n_classes=args.n_classes,bag_weight=args.bag_weight,writer=writer,device=device)
+                        train_loop_clam(epoch,model,train_dataloader,optimizer,n_classes=args.n_classes,bag_weight=args.bag_weight, loss_fn=loss_fn,writer=writer,device=device)
                         print(f"Starting Validation {epoch}")
                         stop = validate_clam(epoch,model,val_dataloader,n_classes=args.n_classes,writer=writer,device=device,early_stopping=early_stopping, results_dir =result_dir)
                     elif args.model == "TransMIL":    
@@ -147,10 +161,11 @@ def main(args):
                 #diagram.plot(confidence, ground_truth, filename=os.path.join(result_dir,"diagram.jpg"))
                 
                 for i in range(args.n_classes):
-                    print('class {}: auc: {}'.format(i,aucs[i]))
+                    if n_classes != 2: 
+                        print('class {}: auc: {}'.format(i,aucs[i]))
 
-                    if writer and aucs[i] is not None:
-                        writer.add_scalar('final/test_class_{}_auc'.format(i), aucs[i], exp_idx)
+                        if writer and aucs[i] is not None:
+                            writer.add_scalar('final/test_class_{}_auc'.format(i), aucs[i], exp_idx)
 
                 for i in range(args.n_classes):
                     acc, correct, count = acc_logger.get_summary(i)
@@ -176,11 +191,13 @@ parser.add_argument("--feat_dir", type=str, required=True)
 parser.add_argument("--csv_path", type=str, required=True)
 parser.add_argument("--feature_model", type=str, choices=["ResNet","KimiaNet","DenseNet","efficientnet_b0","efficientnet_b1","efficientnet_b2","efficientnet_b3","efficientnet_b4","efficientnet_b5","efficientnet_b6","efficientnet_b7",'efficientnet_v2_s','efficientnet_v2_m','efficientnet_v2_l','convnext_tiny','convnext_small','convnext_base','convnext_large', "convunext"],default="KimiaNet")
 parser.add_argument("--model", type=str, choices=["CLAM-SB","CLAM-MB","TransMIL"],default="CLAM-SB")
+parser.add_argument("--Main_or_Sub_label", type=str, choices=["Main_3_class","Main_2_class","Sub_Benign","Sub_Hyperplasia","Sub_Neoplasia"],default="Main_3_class")
 #CLAM
 parser.add_argument("--bag_loss", type=str, default="cross-entropy")
 parser.add_argument('--instance_loss', type=str, default="svm")
 parser.add_argument('--k_sample_CLAM', type=int, default=8)
 
+parser.add_argument('--weight_loss', type=str, default="50:50", choices=["50:50","45:65","60:40","65:35","70:30"])
 parser.add_argument('--epochs', type=int, default=200)
 parser.add_argument('--lr', type=float, default=2e-4)
 parser.add_argument("--bag_weight", type=float, default=0.7)

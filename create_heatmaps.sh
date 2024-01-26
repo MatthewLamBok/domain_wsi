@@ -19,7 +19,7 @@ feature_path=FEATURE_PATH
 heatmap_dir=HEATMAP_PATH
 
 # ["ResNet","KimiaNet", "DenseNet"]
-feature_ext="ResNet" 
+feature_ext="KimiaNet" 
 # ["CLAM-SB", "CLAM-MB", "TransMIL"]
 model="CLAM-MB"
 

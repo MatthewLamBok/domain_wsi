@@ -7,13 +7,13 @@ import pandas as pd
 import torch
 from sklearn.model_selection import train_test_split, KFold
 from torch.utils.data import Dataset
-
+from utils import *
 
 class Feature_bag_dataset(Dataset):
     """
     Dataloader for Features at slide level
     """
-    def __init__(self,root, csv_path, split_path = False, fold_num = None, split = None, num_classes=3) -> None:
+    def __init__(self, root, csv_path, split_path = False, Main_or_Sub_label = 'Main_3_class', fold_num = None, split = None, num_classes=3) -> None:
         """_summary_
 
         Args:
@@ -24,10 +24,46 @@ class Feature_bag_dataset(Dataset):
         """
         super(Feature_bag_dataset,self).__init__()
         df = pd.read_csv(csv_path)
+        df = df[["slide_id","Label_2class", "Label", "Sublabel"]]
 
-        df = df[[ "slide_id", "Label"]]
-        label_dict = {'Benign':0, 'Hyperplasia':1, 'Neoplasia':2}
-        df['Label'] = df['Label'].map(label_dict)
+        if Main_or_Sub_label == 'Main_3_class':
+            print("0_", Main_or_Sub_label)
+            df = df[["slide_id", "Label"]]
+            label_dict = {'Benign':0, 'Hyperplasia':1, 'Neoplasia':2}
+            df['Label'] = df['Label'].map(label_dict)
+        elif Main_or_Sub_label == 'Main_2_class':
+            print("1_", Main_or_Sub_label)
+            df = df[["slide_id", "Label_2class"]]
+            label_dict = {'Benign':0, 'Cancer':1}
+            df['Label_2class'] = df['Label_2class'].map(label_dict)
+            df = df.rename(columns={"slide_id": "slide_id", "Label_2class": "Label"})
+        elif Main_or_Sub_label == 'Sub_Benign':
+            print("2_", Main_or_Sub_label)
+            df = df[df['Label'] == 'Benign'][['slide_id', 'Sublabel']]
+            label_dict = {'atrophic_endometrium':0, 'secretory_endometrium':1, 'proliferative_endometrium':2}
+            df['Sublabel'] = df['Sublabel'].map(label_dict)
+            df = df.rename(columns={"slide_id": "slide_id", "Sublabel": "Label"})
+        elif Main_or_Sub_label == 'Sub_Hyperplasia':
+            print("3_", Main_or_Sub_label)
+            df = df[df['Label'] == 'Hyperplasia'][['slide_id', 'Sublabel']]
+            label_dict = {'atypical_hyperplasia':0, 'hyperplasia_no_atypia':1}
+            df['Sublabel'] = df['Sublabel'].map(label_dict)
+            df = df.rename(columns={"slide_id": "slide_id", "Sublabel": "Label"})
+        elif Main_or_Sub_label == 'Sub_Neoplasia':
+            print("4_", Main_or_Sub_label)
+            df = df[df['Label'] == 'Neoplasia'][['slide_id', 'Sublabel']]
+            label_dict = {'endometrioid_adenocarcinoma':0, 'serous_carcinoma':1}
+            df['Sublabel'] = df['Sublabel'].map(label_dict)
+            df = df.rename(columns={"slide_id": "slide_id", "Sublabel": "Label"})
+        else: 
+            print("Error >>>>>")
+            exit()
+        
+        class_counts = df["Label"].value_counts()
+        print(class_counts)
+
+
+        print("Dataframe Shape :", df.shape)            
         self.df = df
         self.df = self.df.sample(frac=1).reset_index(drop=True)
 
@@ -40,6 +76,7 @@ class Feature_bag_dataset(Dataset):
             self.df = self.apply_split(self.split_data, split)
         else:
             self.df = self.split_dataset()
+            print("Dataframe Shape split :", self.df.shape)
 
         self.num_classes = num_classes
         self.cls_slide_id_prep()
@@ -50,7 +87,7 @@ class Feature_bag_dataset(Dataset):
     def __getitem__(self,idx):
         path_slide = os.path.join(self.root, str(self.df['slide_id'][idx]))
         features = torch.concat([torch.load(os.path.join(path_slide,file), map_location=torch.device('cpu'))['features'] for file in os.listdir(path_slide)])
-        #print(path_slide, self.df['slide_id'][idx], features.shape)
+        #print(path_slide, self.df['slide_id'][idx], self.df['Label'][idx], features.shape)
         return features, torch.tensor(self.df['Label'][idx])
 
 
@@ -130,9 +167,11 @@ if __name__ == "__main__":
 
   
     # Create dataset instances
-    train_dataset = Feature_bag_dataset(root=root_path, csv_path=csv_path, split_path=split_path, fold_num=0, split="train")
-    val_dataset = Feature_bag_dataset(root=root_path, csv_path=csv_path, split_path=split_path, fold_num=0, split="val")
-    test_dataset = Feature_bag_dataset(root=root_path, csv_path=csv_path, split_path=split_path, fold_num=0, split="test")
+    train_dataset = Feature_bag_dataset(root=root_path, csv_path=csv_path, split_path=split_path, Main_or_Sub_label = 'Sub_Neoplasia', fold_num=0, split="train",num_classes=2)
+    weights = make_weights_for_balanced_classes_split(train_dataset)
+    exit()
+    val_dataset = Feature_bag_dataset(root=root_path, csv_path=csv_path, split_path=split_path, Main_or_Sub_label = 'Main_3_class', fold_num=0, split="val")
+    test_dataset = Feature_bag_dataset(root=root_path, csv_path=csv_path, split_path=split_path, Main_or_Sub_label = 'Main_3_class',  fold_num=0, split="test")
 
     # Example usage
     print(train_dataset[0][0].shape)

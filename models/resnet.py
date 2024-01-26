@@ -56,10 +56,10 @@ class Bottleneck_Baseline(nn.Module):
 
 class ResNet_Baseline(nn.Module):
 
-    def __init__(self, block, layers):
+    def __init__(self, block, layers, pretrained_output_channel = 3):
         self.inplanes = 64
         super(ResNet_Baseline, self).__init__()
-        self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3,
+        self.conv1 = nn.Conv2d(pretrained_output_channel, 64, kernel_size=7, stride=2, padding=3,
                                bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU(inplace=True)
@@ -108,17 +108,23 @@ class ResNet_Baseline(nn.Module):
 
         return x
 
-def resnet50_baseline(pretrained=False):
+def resnet50_baseline(pretrained=False, pretrained_output_channel= 3):
     """Constructs a Modified ResNet-50 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
-    model = ResNet_Baseline(Bottleneck_Baseline, [3, 4, 6, 3])
+    model = ResNet_Baseline(Bottleneck_Baseline, [3, 4, 6, 3],pretrained_output_channel= pretrained_output_channel)
     if pretrained:
-        model = load_pretrained_weights(model, 'resnet50')
+        model = load_pretrained_weights(model, 'resnet50', pretrained_output_channel= pretrained_output_channel)
     return model
 
-def load_pretrained_weights(model, name):
+def load_pretrained_weights(model, name, pretrained_output_channel):
     pretrained_dict = model_zoo.load_url(model_urls[name])
+    if pretrained_output_channel == 1: 
+        conv1_weights = pretrained_dict['conv1.weight']
+        averaged_weights = conv1_weights.mean(dim=1, keepdim=True)
+        pretrained_dict['conv1.weight'] = averaged_weights
+        model.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
+ 
     model.load_state_dict(pretrained_dict, strict=False)
     return model

@@ -23,8 +23,9 @@ def main(args):
     model = model.to(device)
     model.load_state_dict(torch.load(args.model_path))
     test_dataset = Feature_bag_dataset(root=path, csv_path=data_csv, split='test')
+
     test_dataloader = DataLoader(test_dataset, num_workers=4)
-    test_error, test_auc, acc_logger = summary(model,test_dataloader,n_classes=args.n_classes,device=device,model_type=args.model, conf_matrix_path=os.path.join(args.result_dir, 'conf_matrix_'+args.model+'.jpg'))
+    test_error, test_auc, acc_logger, _ = summary(model,test_dataloader,n_classes=args.n_classes,device=device,model_type=args.model, conf_matrix_path=os.path.join(args.result_dir, 'conf_matrix_'+args.model+'.jpg'))
     print('Test error: {:.4f}, ROC AUC: {:.4f}'.format(test_error, test_auc))
     for i in range(args.n_classes):
             acc, correct, count = acc_logger.get_summary(i)
@@ -38,9 +39,10 @@ parser.add_argument("--csv_path", type=str, required=True)
 parser.add_argument("--bag_loss", type=str, default="cross-entropy")
 parser.add_argument('--instance_loss', type=str, default="svm")
 parser.add_argument('--model_path', type=str,default=None)
-parser.add_argument('--model', type=str, choices=["CLAM-SB", "CLAM-MB", "TransMIL"], default="CLAM-SB")
+parser.add_argument('--model', type=str, choices=["CLAM-SB", "CLAM-MB", "TransMIL"], default="CLAM-MB")
 parser.add_argument('--result_dir', type=str, required=True)
-
+parser.add_argument('--k_sample_CLAM', type=int, default=64)
+parser.add_argument('--drop_out',action="store_true", default=True)
 args = parser.parse_args()
 
 if __name__ == "__main__":

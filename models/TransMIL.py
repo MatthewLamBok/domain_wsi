@@ -111,10 +111,11 @@ class TransMIL(nn.Module):
         return logits, Y_prob, Y_hat, results_dict
 
 if __name__ == "__main__":
-    device =  torch.device("cpu")
-    data = torch.randn((1, 100000, 1024)).to(device)
-    model = TransMIL(n_classes=5, device=device,feature_dim=data.shape[2])
+    device = torch.device("cpu")
+
+    data = torch.randn((1, 100, 1024)).to(device)
+    labels = torch.randint(0, 5, (1, 100)).to(device)  # Random labels for each instance in your batch
+    model = TransMIL(n_classes=5, device=device, feature_dim=data.shape[2])
     print(model.eval())
-    results_dict = model(data = data, return_attn=True)
-    head_idx =0
+    results_dict = model(data=data,labels= labels, return_attn=True)
     print(results_dict)

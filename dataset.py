@@ -77,7 +77,7 @@ class Instance_Dataset_greyscale_output_channel_1(Dataset):
             [
                 transforms.ToTensor(),
                 transforms.Grayscale(num_output_channels=1),  # Convert image to grayscale
-                transforms.Normalize(mean=[0.485], std=[0.229])  # Update the mean and std for single channel
+                transforms.Normalize(mean = [(0.485 + 0.456 + 0.406) / 3], std = [(0.229 + 0.224 + 0.225) / 3])  
             ]
         )
         self.slide_path = slide_path

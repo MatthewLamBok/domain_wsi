@@ -55,7 +55,7 @@ parser.add_argument("--feat_dir",type=str,required=True)
 parser.add_argument("--slide_dir",type=str,required=True)
 parser.add_argument("--csv_path",type=str,default=None)
 parser.add_argument("--gpu",type=bool,default=False)
-parser.add_argument("--slide_ext",type=str,default=".ndpi")
+parser.add_argument("--slide_ext",type=str,default=".svs")
 parser.add_argument("--instance_loss",type=str,default="svm")
 parser.add_argument("--n_classes",type=int,required=True)
 parser.add_argument('--drop_out',action="store_true",default=False)
@@ -67,8 +67,13 @@ parser.add_argument("--blur",action="store_true",default=False)
 parser.add_argument("--binarize",action="store_true",default=False)
 parser.add_argument("--binary_thresh",type=int, default=1)
 parser.add_argument("--custom_downsample",type=int,default=1)
+parser.add_argument('--k_sample_CLAM', type=int, default=8)
+
+#addition for CLAM
+
 args = parser.parse_args()
 if __name__=="__main__":
+    
     device=torch.device("cuda" if args.gpu and torch.cuda.is_available() else "cpu")
     model = create_model(args,device)
 
@@ -80,25 +85,20 @@ if __name__=="__main__":
     heatmaps_vis_args = heatmap_vis_args = {'convert_to_percentiles': not args.use_ref_scores, 'vis_level': args.vis_level, 'blur': args.blur, 'custom_downsample': args.custom_downsample}
     for dir in os.listdir(args.slide_dir):
         slide_id = dir.split('.')[0]
-        os.makedirs(os.path.join(args.heatmap_dir,slide_id),exist_ok=True)
-        path = os.path.join(args.feat_dir,slide_id)
-        feature = torch.concat([torch.load(os.path.join(path,file), map_location=torch.device('cpu'))['features'] for file in os.listdir(path)])
-        coords = torch.concat([torch.tensor(torch.load(os.path.join(path,file), map_location=torch.device('cpu'))['coords']) for file in os.listdir(path)]).numpy()
-        A = infer_one_slide(args,model,device,feature)
-        if args.model != "TransMIL":
-            heatmap_save_name = '{}_{}.jpg'.format(args.feature_ext,args.model)
-            heatmap = drawHeatmap(A, coords, os.path.join(args.slide_dir,slide_id+args.slide_ext),  
-                                    cmap="jet", alpha=args.alpha, **heatmap_vis_args, 
-                                    binarize=args.binarize, 
-                                    blank_canvas=args.blank_canvas,
-                                    thresh=args.binary_thresh,
-                                    overlap=0.75, 
-                                    top_left=None, bot_right = None,seg_level=-1, sthresh=15, mthresh=11, close = 2, use_otsu=False, a_t=1,a_h=1,max_n_holes=20)
-            heatmap.save(os.path.join(args.heatmap_dir, slide_id ,heatmap_save_name), quality=100)
-        else:
-            for h in range(A.shape[0]):
-                heatmap_save_name = '{}_{}_head_{}.jpg'.format(args.feature_ext,args.model,h)
-                heatmap = drawHeatmap(A[h], coords, os.path.join(args.slide_dir,slide_id+args.slide_ext),  
+        if os.path.isdir(os.path.join(args.feat_dir,slide_id)):
+            os.makedirs(os.path.join(args.heatmap_dir,slide_id),exist_ok=True)
+
+            path = os.path.join(args.feat_dir,slide_id)
+            feature = torch.concat([torch.load(os.path.join(path,file), map_location=torch.device('cpu'))['features'] for file in os.listdir(path)])
+            coords = torch.concat([torch.tensor(torch.load(os.path.join(path,file), map_location=torch.device('cpu'))['coords']) for file in os.listdir(path)]).numpy()
+            A = infer_one_slide(args,model,device,feature)
+            
+            slide_svs = os.path.join(args.slide_dir,slide_id+args.slide_ext)
+            if not os.path.isfile(slide_svs):
+                slide_svs = os.path.join(slide_svs + '.svs')
+            if args.model != "TransMIL":
+                heatmap_save_name = '{}_{}.jpg'.format(args.feature_ext,args.model)
+                heatmap = drawHeatmap(A, coords, slide_svs,  
                                         cmap="jet", alpha=args.alpha, **heatmap_vis_args, 
                                         binarize=args.binarize, 
                                         blank_canvas=args.blank_canvas,
@@ -106,4 +106,16 @@ if __name__=="__main__":
                                         overlap=0.75, 
                                         top_left=None, bot_right = None,seg_level=-1, sthresh=15, mthresh=11, close = 2, use_otsu=False, a_t=1,a_h=1,max_n_holes=20)
                 heatmap.save(os.path.join(args.heatmap_dir, slide_id ,heatmap_save_name), quality=100)
-        
+            else:
+                for h in range(A.shape[0]):
+                    heatmap_save_name = '{}_{}_head_{}.jpg'.format(args.feature_ext,args.model,h)
+                    heatmap = drawHeatmap(A[h], coords, slide_svs,  
+                                            cmap="jet", alpha=args.alpha, **heatmap_vis_args, 
+                                            binarize=args.binarize, 
+                                            blank_canvas=args.blank_canvas,
+                                            thresh=args.binary_thresh,
+                                            overlap=0.75, 
+                                            top_left=None, bot_right = None,seg_level=-1, sthresh=15, mthresh=11, close = 2, use_otsu=False, a_t=1,a_h=1,max_n_holes=20)
+                    heatmap.save(os.path.join(args.heatmap_dir, slide_id ,heatmap_save_name), quality=100)
+        else:
+            print("NO DIRECTORY FOUND SKIPPING")    

@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from CustomOptim import create_optimizer
-from models import TransMIL, clam
+from models import TransMIL, clam, MultipleMILTransformer
 from sklearn.metrics import ConfusionMatrixDisplay
 from sklearn.metrics import auc as calc_auc
 from sklearn.metrics import confusion_matrix, roc_auc_score, roc_curve
@@ -45,6 +45,9 @@ def create_model(args, device, feature_dim=1024):
             model = clam.CLAM_MB(n_classes = args.n_classes, k_sample=args.k_sample_CLAM, subtyping=True, instance_loss_fn=instance_loss_fn, dropout=args.drop_out,feature_dim=feature_dim)
     elif args.model == "TransMIL":
         model = TransMIL.TransMIL(args.n_classes, device,feature_dim=feature_dim)
+    elif args.model == "MMIL":
+        model = MultipleMILTransformer.MultipleMILTransformer(args)
+
     return model
     
 class Accuracy_Logger(object):
@@ -577,7 +580,10 @@ def summary(model, loader, n_classes, device, model_type="CLAM-SB", conf_matrix_
                 logits, Y_prob, Y_hat, _, _ = model(data.squeeze(0))
             elif model_type == "TransMIL":
                 logits, Y_prob, Y_hat, _ = model(data = data, label=label)
-
+           
+            elif model_type=="MMIL":
+                logits, Y_prob, Y_hat, _ = model(data=data)
+               
         acc_logger.log(Y_hat, label)
         probs = Y_prob.cpu().numpy()
         all_probs[batch_idx] = probs
