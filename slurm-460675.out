@@ -1,0 +1,37 @@
+
+scontrol show job 460675
+JobId=460675 JobName=debugjob-1-matt1lam
+   UserId=matt1lam(3118515) GroupId=dsussman(6049526) MCS_label=N/A
+   Priority=10142843 Nice=0 Account=def-dsussman QOS=normal
+   JobState=COMPLETING Reason=None Dependency=(null)
+   Requeue=0 Restarts=0 BatchFlag=0 Reboot=0 ExitCode=0:0
+   RunTime=00:25:54 TimeLimit=02:00:00 TimeMin=N/A
+   SubmitTime=2024-01-24T23:46:47 EligibleTime=2024-01-24T23:46:47
+   AccrueTime=Unknown
+   StartTime=2024-01-24T23:46:47 EndTime=2024-01-25T00:12:41 Deadline=N/A
+   SuspendTime=None SecsPreSuspend=0 LastSchedEval=2024-01-24T23:46:47 Scheduler=Main
+   Partition=debug AllocNode:Sid=mist-login01:3118907
+   ReqNodeList=(null) ExcNodeList=(null)
+   NodeList=mist022
+   BatchHost=mist022
+   NumNodes=1 NumCPUs=32 NumTasks=8 CPUs/Task=1 ReqB:S:C:T=0:0:*:*
+   ReqTRES=cpu=8,mem=58800M,node=1,billing=1,gres/gpu=1
+   AllocTRES=cpu=32,mem=58800M,node=1,billing=1,gres/gpu=1
+   Socks/Node=* NtasksPerN:B:S:C=0:0:*:* CoreSpec=*
+   MinCPUsNode=1 MinMemoryNode=58800M MinTmpDiskNode=0
+   Features=(null) DelayBoot=00:00:00
+   OverSubscribe=OK Contiguous=0 Licenses=(null) Network=(null)
+   Command=/bin/sh
+   WorkDir=/gpfs/fs0/scratch/d/dsussman/matt1lam/WSI-domain-specific
+   Comment=/opt/slurm/bin/salloc --time=2:0:0 --job-name=debugjob-1-matt1lam --nodes=1 --ntasks=8 -p debug --gpus-per-node=1 
+   Power=
+   CpusPerTres=gpu:32
+   TresPerNode=gres:gpu:1
+   
+
+sacct -j 460675
+JobID           JobName    Account    Elapsed  MaxVMSize     MaxRSS  SystemCPU    UserCPU ExitCode 
+------------ ---------- ---------- ---------- ---------- ---------- ---------- ---------- -------- 
+460675       debugjob-+ def-dsuss+   00:25:54                        00:01.212  00:08.010      0:0 
+460675.inte+ interacti+ def-dsuss+   00:25:55 175036224K  12384896K  00:01.212  00:08.009      0:9 
+460675.exte+     extern def-dsuss+   00:25:54     97600K      7296K   00:00:00   00:00:00      0:0 

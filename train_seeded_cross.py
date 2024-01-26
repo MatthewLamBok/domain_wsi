@@ -80,13 +80,13 @@ def main(args):
             seed_numpy(data_seed)            
             
             if args.cross_val == 'True':
-                train_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, split="train")
-                val_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, split="val")
-                test_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, split="test")
+                train_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, Main_or_Sub_label = args.Main_or_Sub_label, split="train", num_classes=args.n_classes)
+                val_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, Main_or_Sub_label = args.Main_or_Sub_label, split="val", num_classes=args.n_classes)
+                test_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, Main_or_Sub_label = args.Main_or_Sub_label, split="test", num_classes=args.n_classes)
             elif args.cross_val == 'False':
-                train_dataset = dataset.Feature_bag_dataset(root=path, csv_path = data_csv, split = 'train')
-                val_dataset = dataset.Feature_bag_dataset(root=path,csv_path = data_csv, split='val')
-                test_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split='test')
+                train_dataset = dataset.Feature_bag_dataset(root=path, csv_path = data_csv, Main_or_Sub_label = args.Main_or_Sub_label, split = 'train', num_classes=args.n_classes)
+                val_dataset = dataset.Feature_bag_dataset(root=path,csv_path = data_csv, Main_or_Sub_label = args.Main_or_Sub_label, split='val', num_classes=args.n_classes)
+                test_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, Main_or_Sub_label = args.Main_or_Sub_label, split='test', num_classes=args.n_classes)
             
             weights = make_weights_for_balanced_classes_split(train_dataset)
             train_dataloader = DataLoader(train_dataset, num_workers=4, sampler = WeightedRandomSampler(weights,len(weights)))  
@@ -147,10 +147,11 @@ def main(args):
                 #diagram.plot(confidence, ground_truth, filename=os.path.join(result_dir,"diagram.jpg"))
                 
                 for i in range(args.n_classes):
-                    print('class {}: auc: {}'.format(i,aucs[i]))
+                    if args.n_classes !=  2:
+                        print('class {}: auc: {}'.format(i,aucs[i]))
 
-                    if writer and aucs[i] is not None:
-                        writer.add_scalar('final/test_class_{}_auc'.format(i), aucs[i], exp_idx)
+                        if writer and aucs[i] is not None:
+                            writer.add_scalar('final/test_class_{}_auc'.format(i), aucs[i], exp_idx)
 
                 for i in range(args.n_classes):
                     acc, correct, count = acc_logger.get_summary(i)
@@ -176,6 +177,7 @@ parser.add_argument("--feat_dir", type=str, required=True)
 parser.add_argument("--csv_path", type=str, required=True)
 parser.add_argument("--feature_model", type=str, choices=["ResNet","KimiaNet","DenseNet","efficientnet_b0","efficientnet_b1","efficientnet_b2","efficientnet_b3","efficientnet_b4","efficientnet_b5","efficientnet_b6","efficientnet_b7",'efficientnet_v2_s','efficientnet_v2_m','efficientnet_v2_l','convnext_tiny','convnext_small','convnext_base','convnext_large', "convunext"],default="KimiaNet")
 parser.add_argument("--model", type=str, choices=["CLAM-SB","CLAM-MB","TransMIL"],default="CLAM-SB")
+parser.add_argument("--Main_or_Sub_label", type=str, choices=["Main_3_class","Main_2_class","Sub_Benign","Sub_Hyperplasia","Sub_Neoplasia"],default="Main_3_class")
 #CLAM
 parser.add_argument("--bag_loss", type=str, default="cross-entropy")
 parser.add_argument('--instance_loss', type=str, default="svm")
