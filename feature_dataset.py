@@ -73,7 +73,7 @@ class Feature_bag_dataset(Dataset):
         path_slide = os.path.join(self.root, str(self.df['slide_id'][idx]))
         features = torch.concat([torch.load(os.path.join(path_slide,file), map_location=torch.device('cpu'))['features'] for file in os.listdir(path_slide)])
         #print(path_slide, self.df['slide_id'][idx], features.shape)
-        return features, torch.tensor(self.df['Sublabel'][idx])
+        return features, torch.tensor(self.df['Sublabel'][idx]), idx
 
 
     def split_dataset(self):

@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import h5py
 
 
 def initialize_weights(module):
@@ -62,7 +63,7 @@ class Attn_Net_Gated(nn.Module):
 
         self.attention_a = nn.Sequential(*self.attention_a)
         self.attention_b = nn.Sequential(*self.attention_b)
-        
+        print("Attn_Net_Gated n_classes: " + str(n_classes))
         self.attention_c = nn.Linear(D, n_classes)
 
     def forward(self, x):
@@ -131,19 +132,32 @@ class CLAM_SB(nn.Module):
         device=h.device
         if len(A.shape) == 1:
             A = A.view(1, -1)
+        
         top_p_ids = torch.topk(A, self.k_sample)[1][-1]
-        top_p = torch.index_select(h, dim=0, index=top_p_ids)
+        # print("top_p_ids: ")
+        # print(top_p_ids)
+        # print("top_p_ids sorted: ")
+        top_p_ids_sorted = top_p_ids.sort()[0]
+        # print(top_p_ids_sorted)
+        top_p = torch.index_select(h, dim=0, index=top_p_ids)   # list of selected patch feature vectors
+        top_p_order_preserved = torch.index_select(h, dim=0, index=top_p_ids_sorted)   # list of selected patch feature vectors
+        
         top_n_ids = torch.topk(-A, self.k_sample, dim=1)[1][-1]
-        top_n = torch.index_select(h, dim=0, index=top_n_ids)
-        p_targets = self.create_positive_targets(self.k_sample, device)
-        n_targets = self.create_negative_targets(self.k_sample, device)
+        top_n = torch.index_select(h, dim=0, index=top_n_ids)   # list of selected patch feature vectors
+        p_targets = self.create_positive_targets(self.k_sample, device) # tensor of all 1's
+        n_targets = self.create_negative_targets(self.k_sample, device) # tensor of all 0's
 
         all_targets = torch.cat([p_targets, n_targets], dim=0)
         all_instances = torch.cat([top_p, top_n], dim=0)
+        print("Shape of all_instances: " + str(all_instances.shape))
         logits = classifier(all_instances)
+        # print("logits")
+        # print(logits)
         all_preds = torch.topk(logits, 1, dim = 1)[1].squeeze(1)
+        # print("all_preds")
+        # print(all_preds)
         instance_loss = self.instance_loss_fn(logits, all_targets)
-        return instance_loss, all_preds, all_targets
+        return instance_loss, all_preds, all_targets, top_p_order_preserved
     
     #instance-level evaluation for out-of-the-class attention branch
     def inst_eval_out(self, A, h, classifier):
@@ -176,7 +190,7 @@ class CLAM_SB(nn.Module):
                 inst_label = inst_labels[i].item()
                 classifier = self.instance_classifiers[i]
                 if inst_label == 1: #in-the-class:
-                    instance_loss, preds, targets = self.inst_eval(A, h, classifier)
+                    instance_loss, preds, targets, top_p_order_preserved = self.inst_eval(A, h, classifier)
                     all_preds.extend(preds.cpu().numpy())
                     all_targets.extend(targets.cpu().numpy())
                 else: #out-of-the-class
@@ -201,7 +215,7 @@ class CLAM_SB(nn.Module):
             results_dict = {}
         if return_features:
             results_dict.update({'features': M})
-        return logits, Y_prob, Y_hat, A_raw, results_dict
+        return logits, Y_prob, Y_hat, A_raw, results_dict, top_p_order_preserved
 
 class CLAM_MB(CLAM_SB):
     def __init__(self, gate = True, size_arg = "small", dropout = False, k_sample=8, n_classes=2,
@@ -235,23 +249,34 @@ class CLAM_MB(CLAM_SB):
 
     def forward(self, h, label=None, instance_eval=False, return_features=False, attention_only=False):
         device = h.device
-        A, h = self.attention_net(h)  # NxK        
+        A, h = self.attention_net(h)  # NxK
         A = torch.transpose(A, 1, 0)  # KxN
         if attention_only:
             return A
         A_raw = A
+        print("Data shape: ")
+        print(h.shape)
+        # print("Attention score: ")
+        # print(A)
+        print("Attention shape: ")
+        print(A.shape)
         A = F.softmax(A, dim=1)  # softmax over N
+        # print("Softmax over attention score: ")
+        # print(A)
+        top_p_order_preserved = None
 
         if instance_eval:
             total_inst_loss = 0.0
             all_preds = []
             all_targets = []
             inst_labels = F.one_hot(label, num_classes=self.n_classes).squeeze() #binarize label
+            print("Inst labels: ")
+            print(inst_labels)
             for i in range(len(self.instance_classifiers)):
                 inst_label = inst_labels[i].item()
                 classifier = self.instance_classifiers[i]
                 if inst_label == 1: #in-the-class:
-                    instance_loss, preds, targets = self.inst_eval(A[i], h, classifier)
+                    instance_loss, preds, targets, top_p_order_preserved = self.inst_eval(A[i], h, classifier)
                     all_preds.extend(preds.cpu().numpy())
                     all_targets.extend(targets.cpu().numpy())
                 else: #out-of-the-class
@@ -279,4 +304,4 @@ class CLAM_MB(CLAM_SB):
             results_dict = {}
         if return_features:
             results_dict.update({'features': M})
-        return logits, Y_prob, Y_hat, A_raw, results_dict
+        return logits, Y_prob, Y_hat, A_raw, results_dict, top_p_order_preserved

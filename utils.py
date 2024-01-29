@@ -207,9 +207,43 @@ def train_loop_clam(epoch, model, loader, optimizer, n_classes=5, bag_weight=0.7
     inst_count = 0
 
     print('\n')
-    for batch_idx, (data, label) in enumerate(loader):
+    for batch_idx, (data, label, idx) in enumerate(loader):
         data, label = data.to(device), label.to(device)
-        logits, Y_prob, Y_hat, _, instance_dict = model(data.squeeze(0), label=label.squeeze(0), instance_eval=True)
+        logits, Y_prob, Y_hat, _, instance_dict, top_p_order_preserved = model(data.squeeze(0), label=label.squeeze(0), instance_eval=True)
+
+        top_p_order_preserved = top_p_order_preserved.detach().cpu().numpy()
+
+        if not os.path.isdir(os.path.join(os.getcwd(), "aug_patches")):
+            try:
+                os.mkdir(os.path.join(os.getcwd(), "aug_patches"))
+                print("Created folder aug_patches in working directory\n")
+            except Exception as e:
+                print("Unable to create folder aug_patches!")
+                print(e)
+        else:
+            print("Folder aug_patches already present in working directory. Skipping...")
+
+        if not os.path.isfile(os.path.join(os.getcwd(), "aug_patches", str(idx.item()) + ".hdf5")):
+            try:
+                with h5py.File(os.path.join(os.getcwd(), "aug_patches", str(idx.item()) + ".hdf5"), "w") as f:
+                    dset = f.create_dataset("patches",  data=top_p_order_preserved)
+                    print("Saved top k sorted patches for WSI " + str(idx.item()))
+            except Exception as e:
+                print("Unable to save top k sorted patches for WSI " + str(idx.item()))
+                print(e)
+        else:
+            print("File " + str(idx.item()) + ".hdf5" + " already present in folder aug_patches. Skipping...")
+        
+
+        # with h5py.File(os.path.join(os.getcwd(), "aug_patches", str(idx.item()) + ".hdf5"), 'r') as f:
+        #     key = list(f.keys())[0]
+        #     dset = f[key][()]
+        #     print("Key: %s" % key)
+        #     print("Data from h5 file")
+        #     print(dset)
+        #     print("Shape of data")
+        #     print(dset.shape)
+            
 
         acc_logger.log(Y_hat, label)
         loss = loss_fn(logits, label)
@@ -220,7 +254,7 @@ def train_loop_clam(epoch, model, loader, optimizer, n_classes=5, bag_weight=0.7
         instance_loss_value = instance_loss.item()
         train_inst_loss += instance_loss_value
         
-        total_loss = bag_weight * loss + (1-bag_weight) * instance_loss 
+        total_loss = bag_weight * loss + (1-bag_weight) * instance_loss #+ rankmix_loss
 
         inst_preds = instance_dict['inst_preds']
         inst_labels = instance_dict['inst_labels']
@@ -240,6 +274,7 @@ def train_loop_clam(epoch, model, loader, optimizer, n_classes=5, bag_weight=0.7
         # step
         optimizer.step()
         optimizer.zero_grad()
+        # break
 
     # calculate loss and error for epoch
     train_loss /= len(loader)
@@ -300,9 +335,9 @@ def validate_clam(epoch, model, loader, n_classes=5, writer = None, loss_fn = nn
     labels = np.zeros(len(loader))
     sample_size = model.k_sample
     with torch.no_grad():
-        for batch_idx, (data, label) in enumerate(loader):
+        for batch_idx, (data, label, __) in enumerate(loader):
             data, label = data.to(device), label.to(device)      
-            logits, Y_prob, Y_hat, _, instance_dict = model(data.squeeze(0), label=label.squeeze(0), instance_eval=True)
+            logits, Y_prob, Y_hat, _, instance_dict, _ = model(data.squeeze(0), label=label.squeeze(0), instance_eval=True)
             acc_logger.log(Y_hat, label)
             
             loss = loss_fn(logits, label)
@@ -570,7 +605,7 @@ def summary(model, loader, n_classes, device, model_type="CLAM-SB", conf_matrix_
     all_pred_labels = np.zeros(len(loader))
 
 
-    for batch_idx, (data, label) in enumerate(loader):
+    for batch_idx, (data, label, __) in enumerate(loader):
         # print("Batch id: ")
         # print(batch_idx)
         # print("Label: ")
@@ -578,7 +613,7 @@ def summary(model, loader, n_classes, device, model_type="CLAM-SB", conf_matrix_
         data, label = data.to(device), label.to(device)
         with torch.no_grad():
             if model_type == "CLAM-SB" or model_type=="CLAM-MB":
-                logits, Y_prob, Y_hat, _, _ = model(data.squeeze(0))
+                logits, Y_prob, Y_hat, _, _, _ = model(data.squeeze(0))
             elif model_type == "TransMIL":
                 logits, Y_prob, Y_hat, _ = model(data = data, label=label)
 
