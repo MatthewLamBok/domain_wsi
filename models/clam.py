@@ -86,7 +86,7 @@ args:
 """
 class CLAM_SB(nn.Module):
     def __init__(self, gate = True, size_arg = "small", dropout = False, k_sample=8, n_classes=2,
-        instance_loss_fn=nn.CrossEntropyLoss(), subtyping=False, feature_dim=1024):
+        instance_loss_fn=nn.CrossEntropyLoss(), subtyping=False, feature_dim=1024, save_patches=False):
         super(CLAM_SB, self).__init__()
         self.size_dict = {"small": [1024, 512, 256], "big": [1024, 512, 384]}
         size = self.size_dict[size_arg]
@@ -111,6 +111,7 @@ class CLAM_SB(nn.Module):
         self.instance_loss_fn = instance_loss_fn
         self.n_classes = n_classes
         self.subtyping = subtyping
+        self.save_patches = save_patches
 
         initialize_weights(self)
 
@@ -136,11 +137,13 @@ class CLAM_SB(nn.Module):
         top_p_ids = torch.topk(A, self.k_sample)[1][-1]
         # print("top_p_ids: ")
         # print(top_p_ids)
-        # print("top_p_ids sorted: ")
-        top_p_ids_sorted = top_p_ids.sort()[0]
-        # print(top_p_ids_sorted)
         top_p = torch.index_select(h, dim=0, index=top_p_ids)   # list of selected patch feature vectors
-        top_p_order_preserved = torch.index_select(h, dim=0, index=top_p_ids_sorted)   # list of selected patch feature vectors
+
+        if self.save_patches:
+            # print("top_p_ids sorted: ")
+            top_p_ids_sorted = top_p_ids.sort()[0]
+            # print(top_p_ids_sorted)
+            top_p_order_preserved = torch.index_select(h, dim=0, index=top_p_ids_sorted)   # list of selected patch feature vectors
         
         top_n_ids = torch.topk(-A, self.k_sample, dim=1)[1][-1]
         top_n = torch.index_select(h, dim=0, index=top_n_ids)   # list of selected patch feature vectors
@@ -219,7 +222,7 @@ class CLAM_SB(nn.Module):
 
 class CLAM_MB(CLAM_SB):
     def __init__(self, gate = True, size_arg = "small", dropout = False, k_sample=8, n_classes=2,
-        instance_loss_fn=nn.CrossEntropyLoss(), subtyping=False, feature_dim=1024):
+        instance_loss_fn=nn.CrossEntropyLoss(), subtyping=False, feature_dim=1024, save_patches=False):
         nn.Module.__init__(self)
         self.size_dict = {"small": [1024, 512, 256], "big": [1024, 512, 384]}
         size = self.size_dict[size_arg]
@@ -245,6 +248,7 @@ class CLAM_MB(CLAM_SB):
         self.instance_loss_fn = instance_loss_fn
         self.n_classes = n_classes
         self.subtyping = subtyping
+        self.save_patches = save_patches
         initialize_weights(self)
 
     def forward(self, h, label=None, instance_eval=False, return_features=False, attention_only=False):

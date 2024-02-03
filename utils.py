@@ -42,7 +42,7 @@ def create_model(args, device, feature_dim=1024):
         if args.model == "CLAM-SB":
             model = clam.CLAM_SB(n_classes = args.n_classes, k_sample=args.k_sample_CLAM, subtyping=True, instance_loss_fn=instance_loss_fn, dropout=args.drop_out,feature_dim=feature_dim)
         elif args.model == "CLAM-MB":
-            model = clam.CLAM_MB(n_classes = args.n_classes, k_sample=args.k_sample_CLAM, subtyping=True, instance_loss_fn=instance_loss_fn, dropout=args.drop_out,feature_dim=feature_dim)
+            model = clam.CLAM_MB(n_classes = args.n_classes, k_sample=args.k_sample_CLAM, subtyping=True, instance_loss_fn=instance_loss_fn, dropout=args.drop_out,feature_dim=feature_dim,save_patches=args.save_patches)
     elif args.model == "TransMIL":
         model = TransMIL.TransMIL(args.n_classes, device,feature_dim=feature_dim)
     return model
@@ -183,7 +183,7 @@ def make_weights_for_balanced_classes_split(dataset):
         weight[idx] = weight_per_class[y]
     return torch.DoubleTensor(weight)
 
-def train_loop_clam(epoch, model, loader, optimizer, n_classes=5, bag_weight=0.7, writer = None, loss_fn = nn.CrossEntropyLoss(), device = torch.device('cpu')):
+def train_loop_clam(epoch, model, loader, optimizer, n_classes=5, bag_weight=0.7, writer = None, loss_fn = nn.CrossEntropyLoss(), device = torch.device('cpu'), save_patches=False):
     """_summary_
 
     Args:
@@ -213,26 +213,27 @@ def train_loop_clam(epoch, model, loader, optimizer, n_classes=5, bag_weight=0.7
 
         top_p_order_preserved = top_p_order_preserved.detach().cpu().numpy()
 
-        if not os.path.isdir(os.path.join(os.getcwd(), "aug_patches")):
-            try:
-                os.mkdir(os.path.join(os.getcwd(), "aug_patches"))
-                print("Created folder aug_patches in working directory\n")
-            except Exception as e:
-                print("Unable to create folder aug_patches!")
-                print(e)
-        else:
-            print("Folder aug_patches already present in working directory. Skipping...")
+        if save_patches:
+            if not os.path.isdir(os.path.join(os.getcwd(), "aug_patches")):
+                try:
+                    os.mkdir(os.path.join(os.getcwd(), "aug_patches"))
+                    print("Created folder aug_patches in working directory\n")
+                except Exception as e:
+                    print("Unable to create folder aug_patches!")
+                    print(e)
+            else:
+                print("Folder aug_patches already present in working directory. Skipping...")
 
-        if not os.path.isfile(os.path.join(os.getcwd(), "aug_patches", str(idx.item()) + ".hdf5")):
-            try:
-                with h5py.File(os.path.join(os.getcwd(), "aug_patches", str(idx.item()) + ".hdf5"), "w") as f:
-                    dset = f.create_dataset("patches",  data=top_p_order_preserved)
-                    print("Saved top k sorted patches for WSI " + str(idx.item()))
-            except Exception as e:
-                print("Unable to save top k sorted patches for WSI " + str(idx.item()))
-                print(e)
-        else:
-            print("File " + str(idx.item()) + ".hdf5" + " already present in folder aug_patches. Skipping...")
+            if not os.path.isfile(os.path.join(os.getcwd(), "aug_patches", str(idx.item()) + ".hdf5")):
+                try:
+                    with h5py.File(os.path.join(os.getcwd(), "aug_patches", str(idx.item()) + ".hdf5"), "w") as f:
+                        dset = f.create_dataset("patches",  data=top_p_order_preserved)
+                        print("Saved top k sorted patches for WSI " + str(idx.item()))
+                except Exception as e:
+                    print("Unable to save top k sorted patches for WSI " + str(idx.item()))
+                    print(e)
+            else:
+                print("File " + str(idx.item()) + ".hdf5" + " already present in folder aug_patches. Skipping...")
         
 
         # with h5py.File(os.path.join(os.getcwd(), "aug_patches", str(idx.item()) + ".hdf5"), 'r') as f:

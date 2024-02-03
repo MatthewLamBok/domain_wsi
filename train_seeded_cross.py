@@ -118,7 +118,7 @@ def main(args):
                 for epoch in range(args.epochs):
                     if args.model == "CLAM-SB" or args.model == "CLAM-MB":
                         print(f"Starting Training {epoch}")
-                        train_loop_clam(epoch,model,train_dataloader,optimizer,n_classes=args.n_classes,bag_weight=args.bag_weight,writer=writer,device=device)
+                        train_loop_clam(epoch,model,train_dataloader,optimizer,n_classes=args.n_classes,bag_weight=args.bag_weight,writer=writer,device=device, save_patches=args.save_patches)
                         print(f"Starting Validation {epoch}")
                         stop = validate_clam(epoch,model,val_dataloader,n_classes=args.n_classes,writer=writer,device=device,early_stopping=early_stopping, results_dir =result_dir)
                     elif args.model == "TransMIL":    
@@ -209,6 +209,9 @@ parser.add_argument("--cross_val", type=str, default="False", choices=["False","
 
 # Subclassification
 parser.add_argument("--class_name", type=str, default="all")
+
+# Augmentation
+parser.add_argument("--save_patches", type=bool, default=False)
 
 args = parser.parse_args()
 
