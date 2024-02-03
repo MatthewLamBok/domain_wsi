@@ -97,6 +97,7 @@ def main(args):
             for model_seed in range(model_seeds):
                 print(f"Exp/fold:{data_seed}_{model_seed}")
                 seed_torch(model_seed,device)
+                print("Feature dim: " + str(test_dataset[0][0].shape[1]))
                 model = create_model(args, device,test_dataset[0][0].shape[1])
                 model = model.to(device)
                 print(model)
@@ -129,6 +130,7 @@ def main(args):
                         raise NotImplementedError
                     if stop:
                         break
+                    # break
                 if args.early_stopping:
                     eval_model = create_model(args, device,test_dataset[0][0].shape[1])
                     eval_model.to(device)
@@ -170,7 +172,8 @@ def main(args):
                     writer.add_scalar('final/test_error', test_error, exp_idx)
                     writer.add_scalar('final/test_overall_auc', test_auc, exp_idx)
                     writer.close()
-                
+            # break
+               
         end_time = time.time()
         print(f"Time taken: {end_time-stime}")
 
