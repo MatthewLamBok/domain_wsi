@@ -13,7 +13,8 @@ import feature_dataset
 import math
 from heatmap_utils import *
 import csv
-
+import math
+from sklearn.preprocessing import MinMaxScaler
 
 def infer_one_slide(args, model, device, features):
     """_summary_
@@ -45,7 +46,23 @@ def infer_one_slide(args, model, device, features):
             A = return_dict['A'][:,:,padding:(padding+n+1),padding:(padding+n+1)][:,:,0,:-1].view(8,-1,1)
         print(f"Predicted class: {Y_hat}")
     return A.cpu().numpy()
+
+def histogram_info(Attention_score):
+    print(Attention_score.shape)
+    #Normalization between -1 and 1
+    scaler = MinMaxScaler(feature_range=(-1, 1))
+    Attention_score = scaler.fit_transform(Attention_score)
     
+    binsizes = math.sqrt(len(Attention_score))
+    plt.hist(Attention_score, bins=int(binsizes), edgecolor='black')
+    plt.title('Histogram of Your Data')
+    plt.xlabel('Value')
+    plt.ylabel('Frequency')
+    plt.show()
+
+    Attention_score_thresh_0 = Attention_score[Attention_score > 0]
+
+
 parser = argparse.ArgumentParser("Heatmap Inference script")
 parser.add_argument("--model", type=str,choices=["CLAM-SB","CLAM-MB","TransMIL"],default="CLAM-SB")
 parser.add_argument("--feature_ext",type=str,choices=["ResNet","KimiaNet", "DenseNet"],default="ResNet")
@@ -92,7 +109,9 @@ if __name__=="__main__":
             feature = torch.concat([torch.load(os.path.join(path,file), map_location=torch.device('cpu'))['features'] for file in os.listdir(path)])
             coords = torch.concat([torch.tensor(torch.load(os.path.join(path,file), map_location=torch.device('cpu'))['coords']) for file in os.listdir(path)]).numpy()
             A = infer_one_slide(args,model,device,feature)
-            
+            histogram_info(Attention_score = A)
+
+            """           
             slide_svs = os.path.join(args.slide_dir,slide_id+args.slide_ext)
             if not os.path.isfile(slide_svs):
                 slide_svs = os.path.join(slide_svs + '.svs')
@@ -117,5 +136,7 @@ if __name__=="__main__":
                                             overlap=0.75, 
                                             top_left=None, bot_right = None,seg_level=-1, sthresh=15, mthresh=11, close = 2, use_otsu=False, a_t=1,a_h=1,max_n_holes=20)
                     heatmap.save(os.path.join(args.heatmap_dir, slide_id ,heatmap_save_name), quality=100)
+
+        """
         else:
             print("NO DIRECTORY FOUND SKIPPING")    

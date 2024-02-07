@@ -23,41 +23,8 @@ class Feature_bag_dataset(Dataset):
             num_classes (int, optional): number of classes. Defaults to 5.
         """
         super(Feature_bag_dataset,self).__init__()
-        df = pd.read_csv(csv_path)
-        df = df[["slide_id","Label_2class", "Label", "Sublabel"]]
-
-        if Main_or_Sub_label == 'Main_3_class':
-            print("0_", Main_or_Sub_label)
-            df = df[["slide_id", "Label"]]
-            label_dict = {'Benign':0, 'Hyperplasia':1, 'Neoplasia':2}
-            df['Label'] = df['Label'].map(label_dict)
-        elif Main_or_Sub_label == 'Main_2_class':
-            print("1_", Main_or_Sub_label)
-            df = df[["slide_id", "Label_2class"]]
-            label_dict = {'Benign':0, 'Cancer':1}
-            df['Label_2class'] = df['Label_2class'].map(label_dict)
-            df = df.rename(columns={"slide_id": "slide_id", "Label_2class": "Label"})
-        elif Main_or_Sub_label == 'Sub_Benign':
-            print("2_", Main_or_Sub_label)
-            df = df[df['Label'] == 'Benign'][['slide_id', 'Sublabel']]
-            label_dict = {'atrophic_endometrium':0, 'secretory_endometrium':1, 'proliferative_endometrium':2}
-            df['Sublabel'] = df['Sublabel'].map(label_dict)
-            df = df.rename(columns={"slide_id": "slide_id", "Sublabel": "Label"})
-        elif Main_or_Sub_label == 'Sub_Hyperplasia':
-            print("3_", Main_or_Sub_label)
-            df = df[df['Label'] == 'Hyperplasia'][['slide_id', 'Sublabel']]
-            label_dict = {'atypical_hyperplasia':0, 'hyperplasia_no_atypia':1}
-            df['Sublabel'] = df['Sublabel'].map(label_dict)
-            df = df.rename(columns={"slide_id": "slide_id", "Sublabel": "Label"})
-        elif Main_or_Sub_label == 'Sub_Neoplasia':
-            print("4_", Main_or_Sub_label)
-            df = df[df['Label'] == 'Neoplasia'][['slide_id', 'Sublabel']]
-            label_dict = {'endometrioid_adenocarcinoma':0, 'serous_carcinoma':1}
-            df['Sublabel'] = df['Sublabel'].map(label_dict)
-            df = df.rename(columns={"slide_id": "slide_id", "Sublabel": "Label"})
-        else: 
-            print("Error >>>>>")
-            exit()
+        
+        df = filter_dataframe(csv_path, Main_or_Sub_label)
         
         class_counts = df["Label"].value_counts()
         print(class_counts)
@@ -157,15 +124,53 @@ class Feature_bag_dataset(Dataset):
     def getlabel(self, ids):
         return self.df['Label'][ids]
 
+def filter_dataframe(csv_path, Main_or_Sub_label):
+    df = pd.read_csv(csv_path)
+    df = df[["slide_id","Label_2class", "Label", "Sublabel"]]
 
+    if Main_or_Sub_label == 'Main_3_class':
+        print("0_", Main_or_Sub_label)
+        df = df[["slide_id", "Label"]]
+        label_dict = {'Benign':0, 'Hyperplasia':1, 'Neoplasia':2}
+        df['Label'] = df['Label'].map(label_dict)
+    elif Main_or_Sub_label == 'Main_2_class':
+        print("1_", Main_or_Sub_label)
+        df = df[["slide_id", "Label_2class"]]
+        label_dict = {'Benign':0, 'Cancer':1}
+        df['Label_2class'] = df['Label_2class'].map(label_dict)
+        df = df.rename(columns={"slide_id": "slide_id", "Label_2class": "Label"})
+    elif Main_or_Sub_label == 'Sub_Benign':
+        print("2_", Main_or_Sub_label)
+        df = df[df['Label'] == 'Benign'][['slide_id', 'Sublabel']]
+        label_dict = {'atrophic_endometrium':0, 'secretory_endometrium':1, 'proliferative_endometrium':2}
+        df['Sublabel'] = df['Sublabel'].map(label_dict)
+        df = df.rename(columns={"slide_id": "slide_id", "Sublabel": "Label"})
+    elif Main_or_Sub_label == 'Sub_Hyperplasia':
+        print("3_", Main_or_Sub_label)
+        df = df[df['Label'] == 'Hyperplasia'][['slide_id', 'Sublabel']]
+        label_dict = {'atypical_hyperplasia':0, 'hyperplasia_no_atypia':1}
+        df['Sublabel'] = df['Sublabel'].map(label_dict)
+        df = df.rename(columns={"slide_id": "slide_id", "Sublabel": "Label"})
+    elif Main_or_Sub_label == 'Sub_Neoplasia':
+        print("4_", Main_or_Sub_label)
+        df = df[df['Label'] == 'Neoplasia'][['slide_id', 'Sublabel']]
+        label_dict = {'endometrioid_adenocarcinoma':0, 'serous_carcinoma':1}
+        df['Sublabel'] = df['Sublabel'].map(label_dict)
+        df = df.rename(columns={"slide_id": "slide_id", "Sublabel": "Label"})
+    else: 
+        print("Error >>>>>")
+        exit()
+    return df
 
 if __name__ == "__main__":
     # Define the root and CSV file paths
-    root_path = "/home/mlam/Documents/Research_Project/images_data/Output_clam_grey_images/FEATURES_DIRECTORY_BW_256_v3__KimiaNet_greyscale_True_pretrained_output_ch_1/images/"  # Change this to your actual data directory
-    csv_path = "/home/mlam/Documents/Research_Project/images_data/Output_clam_grey_images/FEATURES_DIRECTORY_BW_256_v3__KimiaNet_greyscale_True_pretrained_output_ch_1/filtered_images_clean.csv"  # Change this to your actual csv file path
+    root_path = "/home/mlam/Documents/Research_Project/images_data/Output/FEATURES_DIRECTORY_BW_256_v3_1__KimiaNet_greyscale_True_pretrained_output_ch_1/images/"  # Change this to your actual data directory
+    csv_path = "/home/mlam/Documents/Research_Project/images_data/Output/FEATURES_DIRECTORY_BW_256_v3_1__KimiaNet_greyscale_True_pretrained_output_ch_1/filtered_images_clean.csv"  # Change this to your actual csv file path
     split_path = "/home/mlam/Documents/Research_Project/images_data/Output_clam_grey_images/splits/task_2_tumor_subtyping_100_all/"
 
-  
+    
+    #filter_dataframe(csv_path=csv_path, Main_or_Sub_label = 'Sub_Neoplasia')
+    
     # Create dataset instances
     train_dataset = Feature_bag_dataset(root=root_path, csv_path=csv_path, split_path=split_path, Main_or_Sub_label = 'Sub_Neoplasia', fold_num=0, split="train",num_classes=2)
     weights = make_weights_for_balanced_classes_split(train_dataset)
@@ -179,3 +184,4 @@ if __name__ == "__main__":
 
     train_dataset = Feature_bag_dataset(root=root_path, csv_path=csv_path, split="train")
     print(train_dataset[0][0].shape)
+
