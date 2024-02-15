@@ -17,11 +17,12 @@ def confidence_eval(args, model, dataloader, device, n_bins=20):
     ground_truth = []
     confidence = []
     model.eval()
-    for batch_idx, (data, label) in enumerate(dataloader):
-        data, label = data.to(device), label.to(device)
+    for batch_idx, (data, weight_coords, label) in enumerate(dataloader):
+        all_ones = torch.ones((data.squeeze(0).shape[0]))
+        data, label, all_ones = data.to(device), label.to(device), all_ones.to(device)
         with torch.no_grad():
             if args.model == "CLAM-SB" or args.model=="CLAM-MB":
-                logits, Y_prob, Y_hat, _, _ = model(data.squeeze(0))
+                logits, Y_prob, Y_hat, _, _ = model(data.squeeze(0), coord_attn = all_ones)
             elif args.model == "TransMIL":
                 logits, Y_prob, Y_hat, _ = model(data = data, label=label)
             ground_truth.append(label.item())

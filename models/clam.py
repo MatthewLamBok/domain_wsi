@@ -233,7 +233,7 @@ class CLAM_MB(CLAM_SB):
         self.subtyping = subtyping
         initialize_weights(self)
 
-    def forward(self, h, label=None, instance_eval=False, return_features=False, attention_only=False):
+    def forward(self, h, coord_attn, label=None, instance_eval=False, return_features=False, attention_only=False):
         device = h.device
         A, h = self.attention_net(h)  # NxK        
         A = torch.transpose(A, 1, 0)  # KxN
@@ -251,12 +251,13 @@ class CLAM_MB(CLAM_SB):
                 inst_label = inst_labels[i].item()
                 classifier = self.instance_classifiers[i]
                 if inst_label == 1: #in-the-class:
-                    instance_loss, preds, targets = self.inst_eval(A[i], h, classifier)
+                    instance_loss, preds, targets = self.inst_eval(A[i]*coord_attn, h, classifier)
                     all_preds.extend(preds.cpu().numpy())
                     all_targets.extend(targets.cpu().numpy())
+                    
                 else: #out-of-the-class
                     if self.subtyping:
-                        instance_loss, preds, targets = self.inst_eval_out(A[i], h, classifier)
+                        instance_loss, preds, targets = self.inst_eval_out(A[i]*coord_attn, h, classifier)
                         all_preds.extend(preds.cpu().numpy())
                         all_targets.extend(targets.cpu().numpy())
                     else:

@@ -210,10 +210,12 @@ def train_loop_clam(epoch, model, loader, optimizer, n_classes=5, bag_weight=0.7
     inst_count = 0
 
     print('\n')
-    for batch_idx, (data, label) in enumerate(loader):
-        data, label = data.to(device), label.to(device)
-        logits, Y_prob, Y_hat, _, instance_dict = model(data.squeeze(0), label=label.squeeze(0), instance_eval=True)
-
+    for batch_idx, (data, weight_coords, label) in enumerate(loader):
+        data, weight_coords, label = data.to(device), weight_coords.to(device), label.to(device)
+        #print("HERE",data.shape, weight_coords.shape, label)
+        
+        logits, Y_prob, Y_hat, _, instance_dict = model(data.squeeze(0), coord_attn= weight_coords.squeeze(0), label=label.squeeze(0), instance_eval=True)
+        
         acc_logger.log(Y_hat, label)
         loss = loss_fn(logits, label)
         loss_value = loss.item()
@@ -303,9 +305,10 @@ def validate_clam(epoch, model, loader, n_classes=5, writer = None, loss_fn = nn
     labels = np.zeros(len(loader))
     sample_size = model.k_sample
     with torch.no_grad():
-        for batch_idx, (data, label) in enumerate(loader):
-            data, label = data.to(device), label.to(device)      
-            logits, Y_prob, Y_hat, _, instance_dict = model(data.squeeze(0), label=label.squeeze(0), instance_eval=True)
+        for batch_idx, (data, weight_coords, label) in enumerate(loader):
+            all_ones = torch.ones((data.squeeze(0).shape[0]))
+            data, label, all_ones = data.to(device), label.to(device), all_ones.to(device)      
+            logits, Y_prob, Y_hat, _, instance_dict = model(data.squeeze(0), coord_attn = all_ones , label=label.squeeze(0), instance_eval=True)
             acc_logger.log(Y_hat, label)
             
             loss = loss_fn(logits, label)
@@ -573,11 +576,11 @@ def summary(model, loader, n_classes, device, model_type="CLAM-SB", conf_matrix_
     all_pred_labels = np.zeros(len(loader))
 
 
-    for batch_idx, (data, label) in enumerate(loader):
+    for batch_idx, (data, weight_coords, label) in enumerate(loader):
         data, label = data.to(device), label.to(device)
         with torch.no_grad():
             if model_type == "CLAM-SB" or model_type=="CLAM-MB":
-                logits, Y_prob, Y_hat, _, _ = model(data.squeeze(0))
+                logits, Y_prob, Y_hat, _, _ = model(data.squeeze(0), torch.ones((data.squeeze(0).shape[0])))
             elif model_type == "TransMIL":
                 logits, Y_prob, Y_hat, _ = model(data = data, label=label)
            

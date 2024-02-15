@@ -35,6 +35,7 @@ from csbdeep.utils import normalize
 import matplotlib.pyplot as plt
 import squidpy as sq
 
+
 def infer_one_slide(args, model, device, features):
     """_summary_
 
@@ -51,7 +52,7 @@ def infer_one_slide(args, model, device, features):
     features = features.to(device)
     with torch.no_grad():
         if args.model == "CLAM-SB" or args.model== "CLAM-MB":
-            logits, Y_prob, Y_hat, A, _ = model(features)
+            logits, Y_prob, Y_hat, A, _ = model(features, coord_attn=torch.ones((features.shape[0])))
             Y_hat = Y_hat.item()
             if args.model == "CLAM-MB":
                 A = A[Y_hat]
@@ -141,10 +142,64 @@ def part_3_test(data_dict, slide_id, display_bool):
         cell_sizes = [prop.area for prop in props] 
         print(len(props)) 
         num_cells.append(len(props)) 
-
-    print(sum(num_cells))
     
-        
+    
+    print(sum(num_cells))
+
+def display_patches_grid(dataset, indices, title_prefix, max_cols=5):
+    total_patches = len(indices)
+    ncols = min(total_patches, max_cols)
+    nrows = math.ceil(total_patches / ncols)  # Calculate rows needed
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(ncols*4, nrows*4))
+    if nrows > 1:
+        axes = axes.flatten()
+    else:
+        axes = [axes]  # Ensure axes is iterable for a single row
+    
+    for idx, ax in zip(indices, axes):
+        img = dataset[idx][0].squeeze().permute(1, 2, 0).numpy()
+        ax.imshow(img)
+        ax.set_title(f'{title_prefix} {idx+1}')
+        ax.axis('off')
+    for ax in axes[total_patches:]:
+        ax.axis('off')
+    plt.tight_layout()
+    plt.show()
+
+
+def part_4_test(data_dict, slide_id, display_bool):
+
+    slide_file_path='/home/mlam/Documents/Research_Project/images_data/IMAGES-Copy/ALL_images/'+slide_id+'.svs'
+    h5_file_path_arg = '/home/mlam/Documents/Research_Project/images_data/Output/RESULTS_DIRECTORY_BW_256_v3/'
+    h5_file_path =os.path.join(h5_file_path_arg, 'patches', slide_id+'.h5')
+    sorted_indices = np.argsort(data_dict[slide_id]['attention_score'], axis=0).flatten()
+    sorted_attention_score = data_dict[slide_id]['attention_score'][sorted_indices]
+    sorted_coords = data_dict[slide_id]['coords'][sorted_indices]
+
+    digit= 8
+    top_10_attention_scores = sorted_attention_score[:digit]
+    top_sorted_coords = sorted_coords[:digit]
+    low_10_attention_scores = sorted_attention_score[digit:]
+    low_sorted_coords = sorted_coords[digit:]
+    
+    wsi = openslide.open_slide(slide_file_path)
+  
+    patches_dataset = Instance_Dataset_heatmap(wsi=wsi,coords=sorted_coords, patch_level= 0, patch_size = 256, slide_id=slide_id)
+    print(torch.max(patches_dataset[0][0]),torch.min(patches_dataset[0][0]))
+    
+    coords, percent_array = feature_dataset.coord_weight(sorted_coords, slide_file_path, 0.8, display_bool=False)
+    print(coords, percent_array)
+    top_indices = range(digit)  # Top 'digit' patches
+    low_indices = range(digit, digit + digit)  # Next 'digit' number of patches after the top ones
+
+    # Display top patches
+    display_patches_grid(patches_dataset, top_indices, "Top Attention", max_cols=5)
+    # Display low attention patches
+    # Adjust 'low_indices' as needed based on your specific requirements
+    display_patches_grid(patches_dataset, low_indices, "Low Attention", max_cols=5)
+
+
+
 def info_stats_measure(Attention, slide_id):
     attention_scores_dict_stats = {}
     scores_array = np.array(Attention)
@@ -199,14 +254,14 @@ parser.add_argument("--Main_or_Sub_label", type=str, choices=["Main_3_class","Ma
 args = parser.parse_args()
 if __name__=="__main__":
 
-    #parameter
+    #parameter=1
     correlation_bool = False
     data_dict = {}
     attention_scores_dict_stats = {}
 
     device=torch.device("cuda" if args.gpu and torch.cuda.is_available() else "cpu")
     model = create_model(args,device)
-
+    print("HERE", args.ckpt_path)
     print(list(torch.load(args.ckpt_path,map_location=torch.device("cpu")).keys()))
     model.load_state_dict(torch.load(args.ckpt_path,map_location=torch.device("cpu")))
 
@@ -237,8 +292,8 @@ if __name__=="__main__":
                 data_dict[slide_id] = {'attention_score': A, 'coords': coords, 'Y_hat': Y_hat, 'Y': Y}
                 attention_scores_dict_stats[slide_id] = info_stats_measure(Attention = A, slide_id= slide_id)
                 attention_scores_dict_stats[slide_id]['Label'] = Y_hat
-                if Y_hat != 0 and count > 100:
-                    part_3_test(data_dict, slide_id=slide_id, display_bool= True)
+                if Y_hat != 0 and count > 0:
+                    part_4_test(data_dict, slide_id=slide_id, display_bool= True)
 
         else:
             print("NO DIRECTORY FOUND SKIPPING")

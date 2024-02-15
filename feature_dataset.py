@@ -1,6 +1,8 @@
 """
 Dataloader for Features slide level
 """
+import openslide
+from matplotlib import pyplot as plt
 import os
 import numpy as np
 import pandas as pd
@@ -8,12 +10,13 @@ import torch
 from sklearn.model_selection import train_test_split, KFold
 from torch.utils.data import Dataset
 from utils import *
+from  dataset import Bag_Dataset,Instance_Dataset, Instance_Dataset_heatmap, Instance_Dataset_heatmap_greyscale_output_channel_1
 
 class Feature_bag_dataset(Dataset):
     """
     Dataloader for Features at slide level
     """
-    def __init__(self, root, csv_path, split_path = False, Main_or_Sub_label = 'Main_3_class', fold_num = None, split = None, num_classes=3) -> None:
+    def __init__(self, root, csv_path, atten_coord_path, split_path = False, Main_or_Sub_label = 'Main_3_class', fold_num = None, split = None, num_classes=3) -> None:
         """_summary_
 
         Args:
@@ -36,7 +39,7 @@ class Feature_bag_dataset(Dataset):
 
         self.root = root
         self.split = split
-        
+        self.atten_coord_path = atten_coord_path
     
         if split_path:
             self.split_data = self.read_split_csv(split_path, fold_num)
@@ -54,8 +57,21 @@ class Feature_bag_dataset(Dataset):
     def __getitem__(self,idx):
         path_slide = os.path.join(self.root, str(self.df['slide_id'][idx]))
         features = torch.concat([torch.load(os.path.join(path_slide,file), map_location=torch.device('cpu'))['features'] for file in os.listdir(path_slide)])
-        #print(path_slide, self.df['slide_id'][idx], self.df['Label'][idx], features.shape)
-        return features, torch.tensor(self.df['Label'][idx])
+        coords = torch.concat([torch.tensor(torch.load(os.path.join(path_slide,file), map_location=torch.device('cpu'))['coords']) for file in os.listdir(path_slide)]).numpy()
+        
+        
+        atten_path = self.atten_coord_path + str(self.df['slide_id'][idx])+ '.csv'
+        
+        df = pd.read_csv(atten_path)
+        
+        if coords.shape[0] == df.shape[0]:
+            input_df = pd.DataFrame(coords, columns=['x_coord', 'y_coord']).drop_duplicates()
+            merged_df = pd.merge(input_df, df, on=['x_coord', 'y_coord'], how='left')
+        else:
+            raise ValueError("input_df does not have same shape as df. Attention does not work.")
+        #print(features.shape, input_df.shape, merged_df['percent'].shape,  torch.tensor(merged_df['percent']).shape)
+
+        return features, torch.tensor(merged_df['percent']), torch.tensor(self.df['Label'][idx])
 
 
     def split_dataset(self):
@@ -162,26 +178,137 @@ def filter_dataframe(csv_path, Main_or_Sub_label):
         exit()
     return df
 
+
+def coord_weight(coords, slide_file_path, threshold, display_bool):
+    
+    wsi = openslide.open_slide(slide_file_path)
+    patches_dataset = Instance_Dataset_heatmap_greyscale_output_channel_1(wsi=wsi, coords=coords, patch_level=0, patch_size=256, reduce_factor = 10)
+    percent_array = []
+    for i in range(len(coords)):
+        flat_data = patches_dataset[i][0].numpy().flatten()
+        tissue_pixels = np.sum(flat_data < threshold)
+        total_pixels = flat_data.size
+        percentage_of_tissue = int((tissue_pixels / total_pixels) * 100)
+        
+        if percentage_of_tissue == 0:
+            percentage_of_tissue = 1
+        elif percentage_of_tissue > 50:
+            percentage_of_tissue = 100
+        
+        percent_array.append(percentage_of_tissue/100)
+        
+        if display_bool:
+            print(f"Percentage of tissue in the array: {percentage_of_tissue}%")
+            img = patches_dataset[i][0].squeeze().numpy()
+            img_min, img_max = img.min(), img.max()
+            img_normalized = (img - img_min) / (img_max - img_min)
+            fig, axs = plt.subplots(1, 2, figsize=(12, 5))  # 1 row, 2 columns
+            axs[0].imshow(img_normalized, cmap='gray')
+            axs[0].title.set_text('Image')
+            num_bins = 256
+            hist_data, bin_edges = np.histogram(img, bins=num_bins, range=(img_min, img_max))
+            axs[1].plot(bin_edges[0:-1], hist_data, color='black')  # Use plot instead of bar for a smoother histogram
+            axs[1].title.set_text('Histogram')
+            plt.tight_layout()  
+            plt.show()
+
+    return coords, percent_array
+
+
+def process_slide_id(raw_slide_id):
+    """
+    Process a raw slide ID to remove the .svs extension and consider IDs with a version number
+    of .0 as equivalent to base IDs without any version number. Returns None for IDs with other
+    version numbers like .1, .2, etc.
+
+    Parameters:
+    - raw_slide_id (str): The raw slide ID, possibly including .svs extension and version numbers.
+
+    Returns:
+    - str or None: The base slide ID without non-zero version numbers, or None if the ID includes 
+    version numbers other than .0.
+    """
+    if raw_slide_id.endswith('.svs'):
+        raw_slide_id = raw_slide_id[:-4]
+    parts = raw_slide_id.split('.')
+    if len(parts) > 1:
+        if parts[1].isdigit():
+            if parts[1] == "0":
+                return parts[0]
+            else:
+                return None
+        else:
+            return parts[0]
+    else:
+        return raw_slide_id
+
+
+
+
+
+"""
+if __name__ == "__main__":
+    directory = '/home/mlam/Documents/Research_Project/images_data/Output/RESULTS_DIRECTORY_BW_256_v3/'
+    svs_path = '/home/mlam/Documents/Research_Project/images_data/IMAGES-Copy/ALL_images/'
+    output = '/home/mlam/Documents/Research_Project/images_data/Output/RESULTS_DIRECTORY_BW_256_v3/attention/'
+  
+    patch_directory = directory + 'patches/'
+    files_and_directories = os.listdir(patch_directory)
+    slide_id_raw = [file_name.replace('.h5', '') for file_name in files_and_directories]
+
+    processed_base_ids = set()
+    all_results = pd.DataFrame()
+
+    for slide_id_r in slide_id_raw:
+        slide_id_r = '743'
+        slide_id = process_slide_id(slide_id_r)
+        
+        if slide_id != None:
+            with h5py.File(patch_directory + slide_id_r + '.h5', 'r') as f:
+                coord = f['coords'][:]
+            print(coord.shape)
+            slide_file_path = svs_path + slide_id_r + '.svs'
+            coords, percent_array = coord_weight(coord, slide_file_path, 0.8, display_bool=False)
+            df = pd.DataFrame(coords, columns=['x_coord', 'y_coord'])
+            df['percent'] = percent_array
+            csv_file_path = output + slide_id + '.csv'
+            df.to_csv(csv_file_path, index=False)
+
+        exit()
+
+     
+    
+    exit()
+    
+
+    
+"""     
+
+
+
 if __name__ == "__main__":
     # Define the root and CSV file paths
     root_path = "/home/mlam/Documents/Research_Project/images_data/Output/FEATURES_DIRECTORY_BW_256_v3_1__KimiaNet_greyscale_True_pretrained_output_ch_1/images/"  # Change this to your actual data directory
     csv_path = "/home/mlam/Documents/Research_Project/images_data/Output/FEATURES_DIRECTORY_BW_256_v3_1__KimiaNet_greyscale_True_pretrained_output_ch_1/filtered_images_clean.csv"  # Change this to your actual csv file path
     split_path = "/home/mlam/Documents/Research_Project/images_data/Output_clam_grey_images/splits/task_2_tumor_subtyping_100_all/"
-
+    atten_coord_path = "/home/mlam/Documents/Research_Project/images_data/Output/RESULTS_DIRECTORY_BW_256_v3/attention/"
     
     #filter_dataframe(csv_path=csv_path, Main_or_Sub_label = 'Sub_Neoplasia')
     
     # Create dataset instances
-    train_dataset = Feature_bag_dataset(root=root_path, csv_path=csv_path, split_path=split_path, Main_or_Sub_label = 'Sub_Neoplasia', fold_num=0, split="train",num_classes=2)
-    weights = make_weights_for_balanced_classes_split(train_dataset)
-    exit()
-    val_dataset = Feature_bag_dataset(root=root_path, csv_path=csv_path, split_path=split_path, Main_or_Sub_label = 'Main_3_class', fold_num=0, split="val")
-    test_dataset = Feature_bag_dataset(root=root_path, csv_path=csv_path, split_path=split_path, Main_or_Sub_label = 'Main_3_class',  fold_num=0, split="test")
+    train_dataset = Feature_bag_dataset(root=root_path, csv_path=csv_path, atten_coord_path=atten_coord_path, split_path=split_path, Main_or_Sub_label = 'Main_3_class', fold_num=0, split="train")
+    val_dataset = Feature_bag_dataset(root=root_path, csv_path=csv_path, atten_coord_path=atten_coord_path, split_path=split_path, Main_or_Sub_label = 'Main_3_class', fold_num=0, split="val")
+    test_dataset = Feature_bag_dataset(root=root_path, csv_path=csv_path, atten_coord_path=atten_coord_path, split_path=split_path, Main_or_Sub_label = 'Main_3_class',  fold_num=0, split="test")
 
-    # Example usage
-    print(train_dataset[0][0].shape)
-    print(len(train_dataset))
 
-    train_dataset = Feature_bag_dataset(root=root_path, csv_path=csv_path, split="train")
-    print(train_dataset[0][0].shape)
 
+    for i in range(len(train_dataset)):
+        print(i)
+        if train_dataset[i][0].shape[0] == 10361 or train_dataset[i][0].shape[0]  == 10363:
+            exit()
+    for i in range(len(val_dataset)):
+        print(i)
+        val_dataset[i][0]
+    for i in range(len(test_dataset)):
+        print(i)
+        test_dataset[i][0]        

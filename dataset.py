@@ -91,6 +91,29 @@ class Instance_Dataset_heatmap(Dataset):
         img = self.patch_transform(img).unsqueeze(0)
         return img, coord, self.slide_id
 
+class Instance_Dataset_heatmap_greyscale_output_channel_1(Dataset):
+    def __init__(self, wsi, coords, patch_level, patch_size, reduce_factor=1) -> None:
+        self.wsi = wsi
+        self.patch_transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Resize((patch_size // reduce_factor, patch_size // reduce_factor)),  # Resize the image
+            transforms.Grayscale(num_output_channels=1),  # Convert image to grayscale 
+        ])
+        self.coords = coords
+        self.patch_level = patch_level
+        self.patch_size = patch_size
+        self.reduce_factor = reduce_factor  # New attribute to adjust size reduction
+
+    def __len__(self):
+        return len(self.coords)
+
+    def __getitem__(self, idx):
+        coord = self.coords[idx]
+        img = self.wsi.read_region(coord, self.patch_level, (self.patch_size, self.patch_size)).convert('RGB')
+        img = self.patch_transform(img).unsqueeze(0)
+        return img, coord
+
+
 
 class Instance_Dataset_greyscale_output_channel_1(Dataset):
     """

@@ -197,7 +197,6 @@ parser.add_argument("--bag_loss", type=str, default="cross-entropy")
 parser.add_argument('--instance_loss', type=str, default="svm")
 parser.add_argument('--k_sample_CLAM', type=int, default=8)
 
-parser.add_argument('--weight_loss', type=str, default="50:50", choices=["50:50","45:65","60:40","65:35","70:30"])
 parser.add_argument('--epochs', type=int, default=200)
 parser.add_argument('--lr', type=float, default=2e-4)
 parser.add_argument("--bag_weight", type=float, default=0.7)

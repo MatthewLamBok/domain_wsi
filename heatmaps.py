@@ -32,7 +32,7 @@ def infer_one_slide(args, model, device, features):
     features = features.to(device)
     with torch.no_grad():
         if args.model == "CLAM-SB" or args.model== "CLAM-MB":
-            logits, Y_prob, Y_hat, A, _ = model(features)
+            logits, Y_prob, Y_hat, A, _ = model(features, coord_attn=torch.ones((features.shape[0])))
             Y_hat = Y_hat.item()
             if args.model == "CLAM-MB":
                 A = A[Y_hat]
@@ -109,9 +109,9 @@ if __name__=="__main__":
             feature = torch.concat([torch.load(os.path.join(path,file), map_location=torch.device('cpu'))['features'] for file in os.listdir(path)])
             coords = torch.concat([torch.tensor(torch.load(os.path.join(path,file), map_location=torch.device('cpu'))['coords']) for file in os.listdir(path)]).numpy()
             A = infer_one_slide(args,model,device,feature)
-            histogram_info(Attention_score = A)
+            #histogram_info(Attention_score = A)
 
-            """           
+                     
             slide_svs = os.path.join(args.slide_dir,slide_id+args.slide_ext)
             if not os.path.isfile(slide_svs):
                 slide_svs = os.path.join(slide_svs + '.svs')
@@ -137,6 +137,6 @@ if __name__=="__main__":
                                             top_left=None, bot_right = None,seg_level=-1, sthresh=15, mthresh=11, close = 2, use_otsu=False, a_t=1,a_h=1,max_n_holes=20)
                     heatmap.save(os.path.join(args.heatmap_dir, slide_id ,heatmap_save_name), quality=100)
 
-        """
+       
         else:
             print("NO DIRECTORY FOUND SKIPPING")    

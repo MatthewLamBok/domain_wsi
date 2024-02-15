@@ -24,7 +24,7 @@ feature_ext="KimiaNet"
 model="CLAM-MB"
 
 cd CLAM
-python create_patches_fp.py --source $data_path --save_dir $patch_path --patch_size 256 --preset glioma.csv --seg --patch --stitch --patch_level 1
+
 echo "Patch extraction completed"
 cd ..
 python feature_extraction.py --data_h5_dir $patch_path --data_slide_dir $data_path --csv_path $patch_path/process_list_autogen.csv --model $feature_ext --feat_dir $feature_path/$feature_ext

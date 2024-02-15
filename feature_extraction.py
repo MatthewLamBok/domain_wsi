@@ -14,6 +14,7 @@ import torch
 import h5py
 import matplotlib.pyplot as plt
 
+
 parser = argparse.ArgumentParser(description='Feature Extraction')
 parser.add_argument('--data_h5_dir', type=str, default=None)
 parser.add_argument('--data_slide_dir', type=str, default=None)
@@ -41,7 +42,7 @@ if __name__ == "__main__":
         slide_id = bags[bag_idx].split(args.slide_ext)[0]
 
         if not os.path.isfile(os.path.join(args.data_slide_dir, slide_id+args.slide_ext)):
-            slide_id += '.svs'  #
+            slide_id += args.slide_ext  #
 
         
         bag_name = slide_id+'.h5'
