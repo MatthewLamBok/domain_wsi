@@ -86,7 +86,7 @@ args:
 """
 class CLAM_SB(nn.Module):
     def __init__(self, gate = True, size_arg = "small", dropout = False, k_sample=8, n_classes=2,
-        instance_loss_fn=nn.CrossEntropyLoss(), subtyping=False, feature_dim=1024, save_patches=False):
+        instance_loss_fn=nn.CrossEntropyLoss(), subtyping=False, feature_dim=1024, mode=0, augment=False):
         super(CLAM_SB, self).__init__()
         self.size_dict = {"small": [1024, 512, 256], "big": [1024, 512, 384]}
         size = self.size_dict[size_arg]
@@ -111,7 +111,8 @@ class CLAM_SB(nn.Module):
         self.instance_loss_fn = instance_loss_fn
         self.n_classes = n_classes
         self.subtyping = subtyping
-        self.save_patches = save_patches
+        self.mode = mode
+        self.augment = augment
 
         initialize_weights(self)
 
@@ -129,44 +130,69 @@ class CLAM_SB(nn.Module):
         return torch.full((length, ), 0, device=device).long()
     
     #instance-level evaluation for in-the-class attention branch
-    def inst_eval(self, A, h, classifier): 
+    def inst_eval(self, A, h, classifier):
         device=h.device
         if len(A.shape) == 1:
             A = A.view(1, -1)
-        
-        top_p_ids = torch.topk(A, self.k_sample)[1][-1]
-        # print("top_p_ids: ")
-        # print(top_p_ids)
-        top_p = torch.index_select(h, dim=0, index=top_p_ids)   # list of selected patch feature vectors
 
-        if self.save_patches:
-            # print("top_p_ids sorted: ")
-            top_p_ids_sorted = top_p_ids.sort()[0]
-            # print(top_p_ids_sorted)
-            top_p_order_preserved = torch.index_select(h, dim=0, index=top_p_ids_sorted)   # list of selected patch feature vectors
+        # print("\nAttention shape: ")
+        # print(A.shape)
+        # print("\nAttention score: ")
+        # print(A)
         
+        patch_logits = []
+        top_p_ids = torch.topk(A, self.k_sample)[1][-1]
         top_n_ids = torch.topk(-A, self.k_sample, dim=1)[1][-1]
-        top_n = torch.index_select(h, dim=0, index=top_n_ids)   # list of selected patch feature vectors
+
+        if self.mode == 1 or (self.mode == 0 and self.augment):
+            patch_logits = classifier(h)
+
+            top_p = torch.index_select(patch_logits, dim=0, index=top_p_ids)   # list of selected patch feature vectors
+            top_n = torch.index_select(patch_logits, dim=0, index=top_n_ids)   # list of selected patch feature vectors
+            
+            logits = torch.cat([top_p, top_n], dim=0)
+
+            # print("*******************************")
+            # print("new logits: ")
+            # print(logits)
+            # top_p = torch.index_select(h, dim=0, index=top_p_ids)   # list of selected patch feature vectors
+            # top_n = torch.index_select(h, dim=0, index=top_n_ids)   # list of selected patch feature vectors
+            # p_n_instances = torch.cat([top_p, top_n], dim=0)
+            # logits = classifier(p_n_instances)
+            # print("\nold logits")
+            # print(logits)
+            # print("*******************************")
+        else:
+            top_p = torch.index_select(h, dim=0, index=top_p_ids)   # list of selected patch feature vectors
+            top_n = torch.index_select(h, dim=0, index=top_n_ids)   # list of selected patch feature vectors
+
+            p_n_instances = torch.cat([top_p, top_n], dim=0)
+            # print("Shape of p_n_instances: " + str(p_n_instances.shape))
+            logits = classifier(p_n_instances)
+
         p_targets = self.create_positive_targets(self.k_sample, device) # tensor of all 1's
         n_targets = self.create_negative_targets(self.k_sample, device) # tensor of all 0's
 
         all_targets = torch.cat([p_targets, n_targets], dim=0)
-        all_instances = torch.cat([top_p, top_n], dim=0)
-        print("Shape of all_instances: " + str(all_instances.shape))
-        logits = classifier(all_instances)
+
         # print("logits")
         # print(logits)
+        # print("logits shape")
+        # print(logits.shape)
+
         all_preds = torch.topk(logits, 1, dim = 1)[1].squeeze(1)
         # print("all_preds")
         # print(all_preds)
         instance_loss = self.instance_loss_fn(logits, all_targets)
-        return instance_loss, all_preds, all_targets, top_p_order_preserved
+        return instance_loss, all_preds, all_targets, patch_logits
     
     #instance-level evaluation for out-of-the-class attention branch
     def inst_eval_out(self, A, h, classifier):
         device=h.device
         if len(A.shape) == 1:
             A = A.view(1, -1)
+        # print("\nAttention shape: ")
+        # print(A.shape)
         top_p_ids = torch.topk(A, self.k_sample)[1][-1]
         top_p = torch.index_select(h, dim=0, index=top_p_ids)
         p_targets = self.create_negative_targets(self.k_sample, device)
@@ -193,7 +219,7 @@ class CLAM_SB(nn.Module):
                 inst_label = inst_labels[i].item()
                 classifier = self.instance_classifiers[i]
                 if inst_label == 1: #in-the-class:
-                    instance_loss, preds, targets, top_p_order_preserved = self.inst_eval(A, h, classifier)
+                    instance_loss, preds, targets, patch_logits = self.inst_eval(A, h, classifier)
                     all_preds.extend(preds.cpu().numpy())
                     all_targets.extend(targets.cpu().numpy())
                 else: #out-of-the-class
@@ -218,11 +244,11 @@ class CLAM_SB(nn.Module):
             results_dict = {}
         if return_features:
             results_dict.update({'features': M})
-        return logits, Y_prob, Y_hat, A_raw, results_dict, top_p_order_preserved
+        return logits, Y_prob, Y_hat, A_raw, results_dict, patch_logits
 
 class CLAM_MB(CLAM_SB):
     def __init__(self, gate = True, size_arg = "small", dropout = False, k_sample=8, n_classes=2,
-        instance_loss_fn=nn.CrossEntropyLoss(), subtyping=False, feature_dim=1024, save_patches=False):
+        instance_loss_fn=nn.CrossEntropyLoss(), subtyping=False, feature_dim=1024, mode=0, augment=False):
         nn.Module.__init__(self)
         self.size_dict = {"small": [1024, 512, 256], "big": [1024, 512, 384]}
         size = self.size_dict[size_arg]
@@ -248,39 +274,44 @@ class CLAM_MB(CLAM_SB):
         self.instance_loss_fn = instance_loss_fn
         self.n_classes = n_classes
         self.subtyping = subtyping
-        self.save_patches = save_patches
+        self.mode = mode
+        self.augment = augment
         initialize_weights(self)
 
-    def forward(self, h, label=None, instance_eval=False, return_features=False, attention_only=False):
-        device = h.device
-        A, h = self.attention_net(h)  # NxK
+    def forward(self, data, label=None, instance_eval=False, return_features=False, attention_only=False):
+        device = data.device
+        A, h = self.attention_net(data)  # NxK
         A = torch.transpose(A, 1, 0)  # KxN
         if attention_only:
             return A
         A_raw = A
-        print("Data shape: ")
-        print(h.shape)
-        # print("Attention score: ")
+        # print("\nAttention shape: ")
+        # print(A.shape)
+        # print("\nAttention score: ")
         # print(A)
-        print("Attention shape: ")
-        print(A.shape)
+        # print("\nAttention score sorted: ")
+        # print(A.sort()[0])
         A = F.softmax(A, dim=1)  # softmax over N
-        # print("Softmax over attention score: ")
+        # print("\nSoftmax over attention score: ")
         # print(A)
-        top_p_order_preserved = None
+        # print("\nSoftmax over attention score sorted: ")
+        # print(A.sort()[0])
+        # print("\nSoftmax over attention score std: ")
+        # print(torch.std(A, dim=1, keepdim=True))
+        patch_logits = None
 
         if instance_eval:
             total_inst_loss = 0.0
             all_preds = []
             all_targets = []
             inst_labels = F.one_hot(label, num_classes=self.n_classes).squeeze() #binarize label
-            print("Inst labels: ")
-            print(inst_labels)
+            # print("Inst labels: ")
+            # print(inst_labels)
             for i in range(len(self.instance_classifiers)):
                 inst_label = inst_labels[i].item()
                 classifier = self.instance_classifiers[i]
                 if inst_label == 1: #in-the-class:
-                    instance_loss, preds, targets, top_p_order_preserved = self.inst_eval(A[i], h, classifier)
+                    instance_loss, preds, targets, patch_logits = self.inst_eval(A[i], h, classifier)
                     all_preds.extend(preds.cpu().numpy())
                     all_targets.extend(targets.cpu().numpy())
                 else: #out-of-the-class
@@ -308,4 +339,4 @@ class CLAM_MB(CLAM_SB):
             results_dict = {}
         if return_features:
             results_dict.update({'features': M})
-        return logits, Y_prob, Y_hat, A_raw, results_dict, top_p_order_preserved
+        return logits, Y_prob, Y_hat, A_raw, results_dict, patch_logits, data

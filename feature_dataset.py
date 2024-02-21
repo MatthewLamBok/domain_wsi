@@ -2,6 +2,7 @@
 Dataloader for Features slide level
 """
 import os
+import h5py
 import numpy as np
 import pandas as pd
 import torch
@@ -13,7 +14,7 @@ class Feature_bag_dataset(Dataset):
     """
     Dataloader for Features at slide level
     """
-    def __init__(self,root, csv_path, split_path = False, fold_num = None, split = None, num_classes=3, class_name="") -> None:
+    def __init__(self,root, csv_path, split_path = False, fold_num = None, split = None, num_classes=3, class_name="", augment=False, result_dir='') -> None:
         """_summary_
 
         Args:
@@ -48,14 +49,16 @@ class Feature_bag_dataset(Dataset):
         df = df[[ "slide_id", "Sublabel"]]
         # print(df.head)
         df['Sublabel'] = df['Sublabel'].map(label_dict)
+        self.label_dict = label_dict
         self.df = df
         self.df = self.df.sample(frac=1).reset_index(drop=True)
+        self.augment = augment
 
         self.root = root
         self.split = split
-        # print("Split: ")
-        # print(split)
-        
+        self.csv_path = csv_path
+        self.class_name = class_name
+        self.result_dir = result_dir
     
         if split_path:
             self.split_data = self.read_split_csv(split_path, fold_num)
@@ -70,10 +73,21 @@ class Feature_bag_dataset(Dataset):
         return len(self.df)
 
     def __getitem__(self,idx):
-        path_slide = os.path.join(self.root, str(self.df['slide_id'][idx]))
-        features = torch.concat([torch.load(os.path.join(path_slide,file), map_location=torch.device('cpu'))['features'] for file in os.listdir(path_slide)])
-        #print(path_slide, self.df['slide_id'][idx], features.shape)
-        return features, torch.tensor(self.df['Sublabel'][idx]), idx
+        if '_' in str(self.df['slide_id'][idx]):
+            feature_path = os.path.join(self.result_dir, 'augmented_images',  str(self.df['slide_id'][idx]) + '.hdf5')
+            with h5py.File(feature_path, "r") as f:
+                # print('Keys')
+                # print(list(f.keys()))
+                features = torch.from_numpy(f["patches"][()])
+        else:
+            path_slide = os.path.join(self.root, str(self.df['slide_id'][idx]))
+            features = torch.concat([torch.load(os.path.join(path_slide,file), map_location=torch.device('cpu'))['features'] for file in os.listdir(path_slide)])
+        # print('features')
+        # print(features)
+        # print('features type')
+        # print(type(features))
+
+        return features, torch.tensor(self.df['Sublabel'][idx]), str(self.df['slide_id'][idx])
 
 
     def split_dataset(self):
@@ -104,7 +118,24 @@ class Feature_bag_dataset(Dataset):
         # Filter main dataframe based on the IDs from the split data
         if split_type in split_data:
             filter_ids = split_data[split_type]
-            return self.df[self.df['slide_id'].isin(filter_ids)].reset_index(drop=True)
+            final_df = self.df[self.df['slide_id'].isin(filter_ids)].reset_index(drop=True)
+            if split_type == 'train' and self.augment:
+                aug_df = pd.read_csv(os.path.join(self.result_dir, self.csv_path.split('/')[-1].split('.')[0] + '_augmented.csv'))
+                aug_df = aug_df[aug_df['Label'] == self.class_name]
+                aug_df = aug_df[[ "slide_id", "Sublabel"]]
+                aug_df = aug_df[aug_df['slide_id'].str.contains("_")].reset_index(drop=True)
+                aug_df['Sublabel'] = aug_df['Sublabel'].map(self.label_dict)
+                # print("Aug_df")
+                # print(aug_df)
+                # print("df")
+                # print(final_df)
+                # aug_df = aug_df.astype({'slide_id': pd.StringDtype()})
+                # final_df = final_df.astype({'slide_id': pd.StringDtype()})
+                final_df = pd.concat((final_df, aug_df)).reset_index(drop=True)
+                final_df = final_df.astype({'slide_id': pd.StringDtype()})
+                # print("final_df")
+                # print(final_df)
+            return final_df
         else:
             raise ValueError(f"Split type {split_type} not found in split data")
 

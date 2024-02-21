@@ -2,6 +2,9 @@
 Training and logging utilities 
 """
 import os
+import random
+import math
+import shutil
 import pandas as pd
 import seaborn as sns
 import h5py
@@ -18,6 +21,7 @@ from sklearn.metrics import confusion_matrix, roc_auc_score, roc_curve
 from sklearn.preprocessing import label_binarize
 from topk.svm import SmoothTop1SVM
 from torchmetrics.functional import structural_similarity_index_measure, mean_squared_error, mean_absolute_error
+import torch.nn.functional as F
 
 import wandb
 
@@ -40,9 +44,9 @@ def create_model(args, device, feature_dim=1024):
         else:
             instance_loss_fn = nn.CrossEntropyLoss()
         if args.model == "CLAM-SB":
-            model = clam.CLAM_SB(n_classes = args.n_classes, k_sample=args.k_sample_CLAM, subtyping=True, instance_loss_fn=instance_loss_fn, dropout=args.drop_out,feature_dim=feature_dim)
+            model = clam.CLAM_SB(n_classes = args.n_classes, k_sample=args.k_sample_CLAM, subtyping=True, instance_loss_fn=instance_loss_fn, dropout=args.drop_out,feature_dim=feature_dim, mode=args.mode, augment = args.augment)
         elif args.model == "CLAM-MB":
-            model = clam.CLAM_MB(n_classes = args.n_classes, k_sample=args.k_sample_CLAM, subtyping=True, instance_loss_fn=instance_loss_fn, dropout=args.drop_out,feature_dim=feature_dim,save_patches=args.save_patches)
+            model = clam.CLAM_MB(n_classes = args.n_classes, k_sample=args.k_sample_CLAM, subtyping=True, instance_loss_fn=instance_loss_fn, dropout=args.drop_out,feature_dim=feature_dim, mode=args.mode, augment = args.augment)
     elif args.model == "TransMIL":
         model = TransMIL.TransMIL(args.n_classes, device,feature_dim=feature_dim)
     return model
@@ -183,7 +187,215 @@ def make_weights_for_balanced_classes_split(dataset):
         weight[idx] = weight_per_class[y]
     return torch.DoubleTensor(weight)
 
-def train_loop_clam(epoch, model, loader, optimizer, n_classes=5, bag_weight=0.7, writer = None, loss_fn = nn.CrossEntropyLoss(), device = torch.device('cpu'), save_patches=False):
+def generate_pseudo_labels(model, device, result_dir, csv_path, class_name, dataset, lambda_value, class_to_augment=-1):
+    model.eval()
+    save_folder_name = "scored_patches"
+    with torch.no_grad():
+        id_list = []
+        prob_list = []
+        label_list = []
+        patches_list = []
+        logits_list = []
+        threshold = 0.9
+        if result_dir[-1] == '/':
+            result_dir = result_dir[:-1]
+        print("Dir name: ")
+        print(os.path.dirname(result_dir))
+        # Read from the saved patch files
+        for file in os.listdir(os.path.join(os.path.dirname(result_dir), save_folder_name)):  # Can further optimize to read labels from csv rather opening all files
+            with h5py.File(os.path.join(os.path.dirname(result_dir), save_folder_name, file), "r") as f:
+                if class_to_augment != -1:
+                    if f["label"][()] == class_to_augment:
+                        if f["Y_prob"][()][class_to_augment] < threshold:
+                            prob_list.append(f["Y_prob"][()][class_to_augment])
+                            label_list.append(f["label"][()])
+                            id_list.append(file.split('.')[0])
+                            patches_list.append(f["patches"][()])
+                            logits_list.append(f["logits"][()])
+                else:
+                    if all(i < 90 for i in f["Y_prob"][()]):
+                        prob_list.append(f["Y_prob"][()])
+                        label_list.append(f["label"][()])
+                        id_list.append(file.split('.')[0])
+                        patches_list.append(f["patches"][()])
+                        logits_list.append(f["logits"][()])
+
+        df = None
+        # if os.path.isfile(csv_path.split('.')[0] + '_augmented.csv'):
+        #     df = pd.read_csv(csv_path.split('.')[0] + '_augmented.csv')
+        if os.path.isfile(csv_path):
+            df = pd.read_csv(csv_path)
+        else:
+            print("Can't find data csv")
+        
+        df = df[["slide_id", "Label", "Sublabel"]]
+        # print("Columns")
+        # print(df.columns)
+        # print("Dtypes")
+        # print(df.dtypes)
+        df = df.astype({'slide_id': pd.StringDtype()})
+        # print("Dtypes")
+        # print(df.dtypes)
+
+        image_idx_1 = -1
+        image_idx_2 = -1
+        used_comb = []
+        no_of_images_to_augment = math.comb(len(id_list), 2) # Taking max possible combo
+        label_name = []
+        sublabel_name = []
+        file_name = []
+
+        while len(used_comb) < no_of_images_to_augment:
+            while (image_idx_1 == image_idx_2 or check_list_contain_pair(image_idx_1, image_idx_2, used_comb)) and len(used_comb) < no_of_images_to_augment:
+                image_idx_1 = random.randint(0, len(id_list) - 1)
+                image_idx_2 = random.randint(0, len(id_list) - 1)
+            
+            used_comb.append((image_idx_1, image_idx_2))
+            
+            print("Augmenting the following images:")
+            print(df.loc[df['slide_id'] == id_list[image_idx_1]])
+            print(df.loc[df['slide_id'] == id_list[image_idx_2]])
+
+            logits1 = torch.from_numpy(logits_list[image_idx_1])
+            logits2 = torch.from_numpy(logits_list[image_idx_2])
+
+            k = min(logits1.shape[0], logits2.shape[0])
+            print("k: " + str(k))
+            
+            # print("Logits matrix 1 shape")
+            # print(logits1[:, 0:2].shape)
+            # print("Logits matrix 2 shape")
+            # print(logits2[:, 0:2].shape)
+            
+            logits1_softmax = F.softmax(logits1, dim=1)
+            logits2_softmax = F.softmax(logits2, dim=1)
+            
+            # print("Logits 1 softmax")
+            # print(logits1_softmax)
+
+            logits1_softmax_topk_ids = torch.sort(torch.topk(logits1_softmax[:, 1:2], k, dim=0)[1], dim=0)[0]
+            # print("Logits 1 softmax topk ids")
+            # print(logits1_softmax_topk_ids)
+            logits2_softmax_topk_ids = torch.sort(torch.topk(logits2_softmax[:, 1:2], k, dim=0)[1], dim=0)[0]
+            topk_1 = torch.index_select(torch.from_numpy(patches_list[image_idx_1]), dim=0, index=logits1_softmax_topk_ids.squeeze())    # list of selected patch feature vectors
+            # print("Topk1 shape")
+            # print(topk_1.shape)
+
+            # print("Prob 1")
+            # print(prob_list[image_idx_1])
+
+            topk_2 = torch.index_select(torch.from_numpy(patches_list[image_idx_2]), dim=0, index=logits2_softmax_topk_ids.squeeze())    # list of selected patch feature vectors
+            h_augmented = lambda_value * topk_1 + (1 - lambda_value) * topk_2
+            # Y_prob_augmented = lambda_value * prob_list[image_idx_1] + (1 - lambda_value) * prob_list[image_idx_2]
+            h_augmented = h_augmented.to(device)
+            logits, Y_prob, Y_hat, _, _, _, _ = model(h_augmented)
+            print("Pred prob: " + str(Y_prob))
+            # print("Mixed prob: " + str(Y_prob_augmented))
+            feature_file_name = str(id_list[image_idx_1]) + "_" + str(id_list[image_idx_2])
+            if not os.path.isdir(os.path.join(os.path.dirname(result_dir), "augmented_images")):
+                try:
+                    print("Creating folder " + os.path.join(os.path.dirname(result_dir), "augmented_images"))
+                    os.mkdir(os.path.join(os.path.dirname(result_dir), "augmented_images"))
+                    print("Created folder augmented_images in " + os.path.dirname(result_dir) + "\n")
+                except Exception as e:
+                    print("Unable to create folder augmented_images!")
+                    print(e)
+            
+            h_augmented = h_augmented.detach().cpu().numpy()
+            if not os.path.isfile(os.path.join(os.path.dirname(result_dir), "augmented_images", feature_file_name + ".hdf5")):
+                try:
+                    with h5py.File(os.path.join(os.path.dirname(result_dir), "augmented_images", feature_file_name + ".hdf5"), "w") as f:
+                        # dset = f.create_dataset("label",  data=label.item())
+                        dset = f.create_dataset("patches",  data=h_augmented)
+                        print("Saved augmented patches " + feature_file_name)
+                except Exception as e:
+                    print("Unable to save augmented patches " + feature_file_name)
+                    print(e)
+            
+            patches = []
+            with h5py.File(os.path.join(os.path.dirname(result_dir), "augmented_images", feature_file_name + ".hdf5"), "r") as f:
+                patches = f["patches"][()]
+            print("Aug patches shape")
+            print(patches.shape)
+
+            inv_label_dict = {v: k for k, v in dataset.label_dict.items()}
+            label_name.append(class_name)
+            sublabel_name.append(inv_label_dict[Y_hat.item()])
+            file_name.append(feature_file_name)
+        
+        df_temp = pd.DataFrame({'Label': label_name, 'Sublabel': sublabel_name, 'slide_id': file_name})
+        print("df_temp shape")
+        print(df_temp.shape)
+        new_df = pd.concat((df, df_temp))
+        print("new df shape")
+        print(new_df.shape)
+
+        if os.path.isfile(os.path.join(os.path.dirname(result_dir), csv_path.split('/')[-1].split('.')[0] + '_augmented.csv')):
+            os.remove(os.path.join(os.path.dirname(result_dir), csv_path.split('/')[-1].split('.')[0] + '_augmented.csv'))
+        new_df.to_csv(os.path.join(os.path.dirname(result_dir), csv_path.split('/')[-1].split('.')[0] + '_augmented.csv'), mode='x')
+        # elif os.path.isfile(csv_path):
+        #     new_df.to_csv(csv_path.split('.')[0] + '_augmented.csv')
+        # else:
+        #     print("Can't find parent csv")
+
+    return
+
+def check_list_contain_pair(id1, id2, pair_list):
+    if len(pair_list) == 0:
+        return False
+    filtered_list = filter(lambda x: (x[0] == id1 and x[1] == id2) or (x[1] == id1 and x[0] == id2), pair_list)
+    return len(list(filtered_list)) != 0
+
+def save_top_ranking_ordered_patches(model, loader, result_dir, device = torch.device('cpu')):
+    save_folder_name = "scored_patches"
+    i = 0
+    model.eval()
+    with torch.no_grad():
+        for batch_idx, (data, label, idx) in enumerate(loader):
+            # print('batch_idx: ' + str(batch_idx))
+            # print('idx: ' + str(idx))
+
+            if not os.path.isdir(os.path.join(os.path.dirname(result_dir), save_folder_name)):
+                try:
+                    os.mkdir(os.path.join(os.path.dirname(result_dir), save_folder_name))
+                    print("Created folder scored_patches in " + str(os.path.dirname(result_dir)) + "\n")
+                except Exception as e:
+                    print("Unable to create folder " + str(os.path.join(os.path.dirname(result_dir), save_folder_name)) + "!")
+                    print(e)
+
+            data, label = data.to(device), label.to(device)
+            logits, Y_prob, Y_hat, _, instance_dict, patch_logits, h = model(data.squeeze(0), label=label.squeeze(0), instance_eval=True)
+            Y_prob = Y_prob[0].detach().cpu().numpy()
+            patch_logits = patch_logits.detach().cpu().numpy()
+            h = h.detach().cpu().numpy()
+
+            if not os.path.isfile(os.path.join(os.path.dirname(result_dir), save_folder_name, str(idx.item()) + ".hdf5")):
+                try:
+                    with h5py.File(os.path.join(os.path.dirname(result_dir), save_folder_name, str(idx.item()) + ".hdf5"), "w") as f:
+                        dset = f.create_dataset("logits",  data=patch_logits)
+                        dset = f.create_dataset("Y_prob",  data=Y_prob)
+                        dset = f.create_dataset("label",  data=label.item())
+                        dset = f.create_dataset("patches",  data=h)
+                        print("Saved top k sorted patches for WSI " + str(idx.item()))
+                        i+=1
+                except Exception as e:
+                    print("Unable to save top k sorted patches for WSI " + str(idx.item()))
+                    print(e)
+
+                # with h5py.File(os.path.join(os.getcwd(), "aug_patches2", str(idx.item()) + ".hdf5"), "r") as f:
+                #     print("Patches: ")
+                #     print(f["patches"][()])
+                #     print("Y_prob: ")
+                #     print(f["Y_prob"][()])
+                #     print("label: ")
+                #     print(f["label"][()])
+
+            else:
+                print("File " + str(idx.item()) + ".hdf5" + " already present in folder " + save_folder_name + ". Skipping...")
+    print("Saved " + str(i) + " files!")
+
+
+def train_loop_clam(epoch, model, loader, optimizer, n_classes=5, bag_weight=0.7, writer = None, loss_fn = nn.CrossEntropyLoss(), device = torch.device('cpu'), mode=0, augment=False):
     """_summary_
 
     Args:
@@ -209,42 +421,7 @@ def train_loop_clam(epoch, model, loader, optimizer, n_classes=5, bag_weight=0.7
     print('\n')
     for batch_idx, (data, label, idx) in enumerate(loader):
         data, label = data.to(device), label.to(device)
-        logits, Y_prob, Y_hat, _, instance_dict, top_p_order_preserved = model(data.squeeze(0), label=label.squeeze(0), instance_eval=True)
-
-        top_p_order_preserved = top_p_order_preserved.detach().cpu().numpy()
-
-        if save_patches:
-            if not os.path.isdir(os.path.join(os.getcwd(), "aug_patches")):
-                try:
-                    os.mkdir(os.path.join(os.getcwd(), "aug_patches"))
-                    print("Created folder aug_patches in working directory\n")
-                except Exception as e:
-                    print("Unable to create folder aug_patches!")
-                    print(e)
-            else:
-                print("Folder aug_patches already present in working directory. Skipping...")
-
-            if not os.path.isfile(os.path.join(os.getcwd(), "aug_patches", str(idx.item()) + ".hdf5")):
-                try:
-                    with h5py.File(os.path.join(os.getcwd(), "aug_patches", str(idx.item()) + ".hdf5"), "w") as f:
-                        dset = f.create_dataset("patches",  data=top_p_order_preserved)
-                        print("Saved top k sorted patches for WSI " + str(idx.item()))
-                except Exception as e:
-                    print("Unable to save top k sorted patches for WSI " + str(idx.item()))
-                    print(e)
-            else:
-                print("File " + str(idx.item()) + ".hdf5" + " already present in folder aug_patches. Skipping...")
-        
-
-        # with h5py.File(os.path.join(os.getcwd(), "aug_patches", str(idx.item()) + ".hdf5"), 'r') as f:
-        #     key = list(f.keys())[0]
-        #     dset = f[key][()]
-        #     print("Key: %s" % key)
-        #     print("Data from h5 file")
-        #     print(dset)
-        #     print("Shape of data")
-        #     print(dset.shape)
-            
+        logits, Y_prob, Y_hat, _, instance_dict, patch_logits, _ = model(data.squeeze(0), label=label.squeeze(0), instance_eval=True)
 
         acc_logger.log(Y_hat, label)
         loss = loss_fn(logits, label)
@@ -255,7 +432,18 @@ def train_loop_clam(epoch, model, loader, optimizer, n_classes=5, bag_weight=0.7
         instance_loss_value = instance_loss.item()
         train_inst_loss += instance_loss_value
         
-        total_loss = bag_weight * loss + (1-bag_weight) * instance_loss #+ rankmix_loss
+        label_value = label.item()
+        if '_' in idx:
+            label_specific_logit = patch_logits[:, label_value:label_value+1]
+            top_label_specific_logit_index = label_specific_logit.topk(1, dim=0)[1]
+
+            top_1_label_specific_logit = torch.index_select(patch_logits, dim=0, index=top_label_specific_logit_index.squeeze())
+
+            rankmix_loss = loss_fn(top_1_label_specific_logit, label)
+
+            total_loss = bag_weight * loss + (1-(bag_weight/2)) * instance_loss + (1-(bag_weight/2)) * rankmix_loss
+        else:
+            total_loss = bag_weight * loss + (1-bag_weight) * instance_loss
 
         inst_preds = instance_dict['inst_preds']
         inst_labels = instance_dict['inst_labels']
@@ -275,7 +463,6 @@ def train_loop_clam(epoch, model, loader, optimizer, n_classes=5, bag_weight=0.7
         # step
         optimizer.step()
         optimizer.zero_grad()
-        # break
 
     # calculate loss and error for epoch
     train_loss /= len(loader)
@@ -305,7 +492,7 @@ def train_loop_clam(epoch, model, loader, optimizer, n_classes=5, bag_weight=0.7
 
 
 
-def validate_clam(epoch, model, loader, n_classes=5, writer = None, loss_fn = nn.CrossEntropyLoss(), device = torch.device('cpu'),early_stopping = None, results_dir = None):
+def validate_clam(epoch, model, loader, n_classes=5, writer = None, loss_fn = nn.CrossEntropyLoss(), device = torch.device('cpu'),early_stopping = None, results_dir = None, mode=0,augment=False):
     """_summary_
 
     Args:
@@ -338,7 +525,7 @@ def validate_clam(epoch, model, loader, n_classes=5, writer = None, loss_fn = nn
     with torch.no_grad():
         for batch_idx, (data, label, __) in enumerate(loader):
             data, label = data.to(device), label.to(device)      
-            logits, Y_prob, Y_hat, _, instance_dict, _ = model(data.squeeze(0), label=label.squeeze(0), instance_eval=True)
+            logits, Y_prob, Y_hat, _, instance_dict, _, _ = model(data.squeeze(0), label=label.squeeze(0), instance_eval=True)
             acc_logger.log(Y_hat, label)
             
             loss = loss_fn(logits, label)
@@ -403,7 +590,10 @@ def validate_clam(epoch, model, loader, n_classes=5, writer = None, loss_fn = nn
 
     if early_stopping:
         assert results_dir
-        early_stopping(epoch, val_loss, model, ckpt_name = os.path.join(results_dir, "model.pt"))
+        if mode==0 and augment:
+            early_stopping(epoch, val_loss, model, ckpt_name = os.path.join(results_dir, "student_model.pt"))
+        else:
+            early_stopping(epoch, val_loss, model, ckpt_name = os.path.join(results_dir, "model.pt"))
         
         if early_stopping.early_stop:
             print("Early stopping")
@@ -614,7 +804,7 @@ def summary(model, loader, n_classes, device, model_type="CLAM-SB", conf_matrix_
         data, label = data.to(device), label.to(device)
         with torch.no_grad():
             if model_type == "CLAM-SB" or model_type=="CLAM-MB":
-                logits, Y_prob, Y_hat, _, _, _ = model(data.squeeze(0))
+                logits, Y_prob, Y_hat, _, _, _, _ = model(data.squeeze(0))
             elif model_type == "TransMIL":
                 logits, Y_prob, Y_hat, _ = model(data = data, label=label)
 
