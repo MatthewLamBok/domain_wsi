@@ -187,7 +187,27 @@ def make_weights_for_balanced_classes_split(dataset):
         weight[idx] = weight_per_class[y]
     return torch.DoubleTensor(weight)
 
-def generate_pseudo_labels(model, device, result_dir, csv_path, class_name, dataset, lambda_value, class_to_augment=-1):
+def is_image_eligible(strategy, prob_list, index1, index2, threshold, class_to_augment):
+    if class_to_augment != -1:
+        print("Reached if")
+        if strategy == "min-max":
+            print('if1')
+            return (prob_list[index1] > threshold and prob_list[index2] > threshold) or (prob_list[index1] < threshold and prob_list[index2] < threshold)
+        elif strategy == "high-prob":
+            print('if2')
+            return prob_list[index1] > threshold and prob_list[index2] > threshold
+        elif strategy == "low-prob":
+            print('if3')
+            return prob_list[index1] < threshold and prob_list[index2] < threshold
+        else:
+            print('else')
+            return True
+    else:
+        print("Reached else")
+        raise NotImplementedError
+
+
+def generate_pseudo_labels(model, device, result_dir, csv_path, class_name, dataset, lambda_value, class_to_augment=-1, aug_pick_strategy="random"):
     model.eval()
     save_folder_name = "scored_patches"
     with torch.no_grad():
@@ -206,19 +226,19 @@ def generate_pseudo_labels(model, device, result_dir, csv_path, class_name, data
             with h5py.File(os.path.join(os.path.dirname(result_dir), save_folder_name, file), "r") as f:
                 if class_to_augment != -1:
                     if f["label"][()] == class_to_augment:
-                        if f["Y_prob"][()][class_to_augment] < threshold:
-                            prob_list.append(f["Y_prob"][()][class_to_augment])
-                            label_list.append(f["label"][()])
-                            id_list.append(file.split('.')[0])
-                            patches_list.append(f["patches"][()])
-                            logits_list.append(f["logits"][()])
-                else:
-                    if all(i < 90 for i in f["Y_prob"][()]):
-                        prob_list.append(f["Y_prob"][()])
+                        # if f["Y_prob"][()][class_to_augment] < threshold:
+                        prob_list.append(f["Y_prob"][()][class_to_augment])
                         label_list.append(f["label"][()])
                         id_list.append(file.split('.')[0])
                         patches_list.append(f["patches"][()])
                         logits_list.append(f["logits"][()])
+                else:
+                    # if all(i < threshold for i in f["Y_prob"][()]):
+                    prob_list.append(f["Y_prob"][()])
+                    label_list.append(f["label"][()])
+                    id_list.append(file.split('.')[0])
+                    patches_list.append(f["patches"][()])
+                    logits_list.append(f["logits"][()])
 
         df = None
         # if os.path.isfile(csv_path.split('.')[0] + '_augmented.csv'):
@@ -240,15 +260,20 @@ def generate_pseudo_labels(model, device, result_dir, csv_path, class_name, data
         image_idx_1 = -1
         image_idx_2 = -1
         used_comb = []
-        no_of_images_to_augment = math.comb(len(id_list), 2) # Taking max possible combo
+        #no_of_images_to_augment = math.comb(len(id_list), 2) # Taking max possible combo
+        no_of_images_to_augment = min(300, math.comb(len(id_list), 2)) # Taking 300 samples
         label_name = []
         sublabel_name = []
         file_name = []
 
         while len(used_comb) < no_of_images_to_augment:
-            while (image_idx_1 == image_idx_2 or check_list_contain_pair(image_idx_1, image_idx_2, used_comb)) and len(used_comb) < no_of_images_to_augment:
+            image_idx_1 = random.randint(0, len(id_list) - 1)
+            image_idx_2 = random.randint(0, len(id_list) - 1)
+            eligibility = is_image_eligible(aug_pick_strategy, prob_list, image_idx_1, image_idx_2, threshold, class_to_augment)
+            while (image_idx_1 == image_idx_2 or check_list_contain_pair(image_idx_1, image_idx_2, used_comb)) or not eligibility:
                 image_idx_1 = random.randint(0, len(id_list) - 1)
                 image_idx_2 = random.randint(0, len(id_list) - 1)
+                eligibility = is_image_eligible(aug_pick_strategy, prob_list, image_idx_1, image_idx_2, threshold, class_to_augment)
             
             used_comb.append((image_idx_1, image_idx_2))
             
@@ -333,10 +358,10 @@ def generate_pseudo_labels(model, device, result_dir, csv_path, class_name, data
         if os.path.isfile(os.path.join(os.path.dirname(result_dir), csv_path.split('/')[-1].split('.')[0] + '_augmented.csv')):
             os.remove(os.path.join(os.path.dirname(result_dir), csv_path.split('/')[-1].split('.')[0] + '_augmented.csv'))
         new_df.to_csv(os.path.join(os.path.dirname(result_dir), csv_path.split('/')[-1].split('.')[0] + '_augmented.csv'), mode='x')
-        # elif os.path.isfile(csv_path):
-        #     new_df.to_csv(csv_path.split('.')[0] + '_augmented.csv')
-        # else:
-        #     print("Can't find parent csv")
+        
+        with open(os.path.join(os.path.dirname(result_dir),'parameters.txt'), 'w') as f:
+            f.write('lambda: {}, strategy: {}'.format(lambda_value, aug_pick_strategy))
+
 
     return
 
@@ -433,7 +458,7 @@ def train_loop_clam(epoch, model, loader, optimizer, n_classes=5, bag_weight=0.7
         train_inst_loss += instance_loss_value
         
         label_value = label.item()
-        if '_' in idx:
+        if mode==0 and augment==True:
             label_specific_logit = patch_logits[:, label_value:label_value+1]
             top_label_specific_logit_index = label_specific_logit.topk(1, dim=0)[1]
 

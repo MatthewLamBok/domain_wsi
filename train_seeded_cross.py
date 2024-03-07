@@ -60,8 +60,8 @@ def main(args):
         os.makedirs(args.log_dir)
     os.environ['WANDB_DIR'] = args.log_dir
     wandb.login()
-    job_type = str.lower(args.class_name) + '_subclassification_aug_var_loss_fn'
-    with wandb.init(project= args.name, config=vars(args), sync_tensorboard=True, mode='offline', group="default_params", job_type=job_type):
+    job_type = str.lower(args.class_name) + '_subclass_aug_student_unified_lf'
+    with wandb.init(project= args.name, config=vars(args), sync_tensorboard=True, mode='offline', group="lr=2e-5,epoch=600,early_stopping,", job_type=job_type):
         stime = time.time()
         path = args.feat_dir
         data_csv = args.csv_path
@@ -106,7 +106,7 @@ def main(args):
                     model = model.to(device)
                     print(model)
                     val_error, val_auc, _, _= summary(model, test_dataloader, args.n_classes, device, model_type = args.model)
-                    print('Val error: {:.4f}, ROC AUC: {:.4f}'.format(val_error, val_auc))
+                    print('Model initialization test error: {:.4f}, ROC AUC: {:.4f}'.format(val_error, val_auc))
                     wandb.watch(model, log_freq=100)
                     optimizer = create_optimizer(args, model,args.model=="TransMIL")
                     result_dir = os.path.join(args.result_dir,'exp_'+str(data_seed)+'_'+str(model_seed))
@@ -199,7 +199,10 @@ def main(args):
                     save_top_ranking_ordered_patches(eval_model, train_dataloader, result_dir, device)
         elif args.mode == 2:
             alpha = 1
-            lambda_value = np.random.beta(alpha, alpha)
+            if args.lambda_value == None:
+                lambda_value = np.random.beta(alpha, alpha)
+            else:
+                lambda_value = args.lambda_value
             print("Lambda")
             print(lambda_value)
             for data_seed in range(loop):
@@ -214,7 +217,7 @@ def main(args):
                     eval_model = create_model(args, device,train_dataset[0][0].shape[1])
                     eval_model.to(device)
                     eval_model.load_state_dict(torch.load(os.path.join(result_dir, "teacher_model.pt")))
-                    generate_pseudo_labels(eval_model, device, result_dir, data_csv, args.class_name, train_dataset, lambda_value, 1)
+                    generate_pseudo_labels(eval_model, device, result_dir, data_csv, args.class_name, train_dataset, lambda_value, 1, aug_pick_strategy=args.aug_pick_strategy)
 
             
                
@@ -258,6 +261,8 @@ parser.add_argument("--class_name", type=str, default="all")
 parser.add_argument("--mode", type=int, default=0)
 parser.add_argument("--augment", type=bool, default=False)
 parser.add_argument("--result_dir_teacher", type=str, default=None)
+parser.add_argument("--lambda_value", type=float, default=None)
+parser.add_argument("--aug_pick_strategy", type=str, choices=["high-prob","low-prob","min-max", "random"], default="random")
 
 args = parser.parse_args()
 
