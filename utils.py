@@ -189,18 +189,13 @@ def make_weights_for_balanced_classes_split(dataset):
 
 def is_image_eligible(strategy, prob_list, index1, index2, threshold, class_to_augment):
     if class_to_augment != -1:
-        print("Reached if")
         if strategy == "min-max":
-            print('if1')
             return (prob_list[index1] > threshold and prob_list[index2] > threshold) or (prob_list[index1] < threshold and prob_list[index2] < threshold)
         elif strategy == "high-prob":
-            print('if2')
             return prob_list[index1] > threshold and prob_list[index2] > threshold
         elif strategy == "low-prob":
-            print('if3')
             return prob_list[index1] < threshold and prob_list[index2] < threshold
         else:
-            print('else')
             return True
     else:
         print("Reached else")
@@ -208,7 +203,7 @@ def is_image_eligible(strategy, prob_list, index1, index2, threshold, class_to_a
 
 
 def generate_pseudo_labels(model, device, result_dir, csv_path, class_name, dataset, lambda_value, class_to_augment=-1, aug_pick_strategy="random"):
-    model.eval()
+    model.eval()    # Set the model to eval mode
     save_folder_name = "scored_patches"
     with torch.no_grad():
         id_list = []
@@ -221,10 +216,11 @@ def generate_pseudo_labels(model, device, result_dir, csv_path, class_name, data
             result_dir = result_dir[:-1]
         print("Dir name: ")
         print(os.path.dirname(result_dir))
-        # Read from the saved patch files
+
+        # Read from the saved patch files and store the values in separate lists
         for file in os.listdir(os.path.join(os.path.dirname(result_dir), save_folder_name)):  # Can further optimize to read labels from csv rather opening all files
             with h5py.File(os.path.join(os.path.dirname(result_dir), save_folder_name, file), "r") as f:
-                if class_to_augment != -1:
+                if class_to_augment != -1:  # Considering only the specific subclass (to be augmented) as indicated by the passed argument
                     if f["label"][()] == class_to_augment:
                         # if f["Y_prob"][()][class_to_augment] < threshold:
                         prob_list.append(f["Y_prob"][()][class_to_augment])
@@ -232,7 +228,7 @@ def generate_pseudo_labels(model, device, result_dir, csv_path, class_name, data
                         id_list.append(file.split('.')[0])
                         patches_list.append(f["patches"][()])
                         logits_list.append(f["logits"][()])
-                else:
+                else:   # Considering all subclasses
                     # if all(i < threshold for i in f["Y_prob"][()]):
                     prob_list.append(f["Y_prob"][()])
                     label_list.append(f["label"][()])
@@ -261,20 +257,24 @@ def generate_pseudo_labels(model, device, result_dir, csv_path, class_name, data
         image_idx_2 = -1
         used_comb = []
         #no_of_images_to_augment = math.comb(len(id_list), 2) # Taking max possible combo
-        no_of_images_to_augment = min(300, math.comb(len(id_list), 2)) # Taking 300 samples
+        no_of_images_to_augment = min(300, math.comb(len(id_list), 2)) # Taking augmenting to create a maximum of 300 samples
         label_name = []
         sublabel_name = []
         file_name = []
 
-        while len(used_comb) < no_of_images_to_augment:
+        while len(used_comb) < no_of_images_to_augment: # Continuing till we get 300 samples
+            # Randomly selecting ids of the images to be augmented
             image_idx_1 = random.randint(0, len(id_list) - 1)
             image_idx_2 = random.randint(0, len(id_list) - 1)
+            # Checking if the randomly selected ids fulfull the augmentation strategy 
             eligibility = is_image_eligible(aug_pick_strategy, prob_list, image_idx_1, image_idx_2, threshold, class_to_augment)
+            # Randomly generate new set of ids 
             while (image_idx_1 == image_idx_2 or check_list_contain_pair(image_idx_1, image_idx_2, used_comb)) or not eligibility:
                 image_idx_1 = random.randint(0, len(id_list) - 1)
                 image_idx_2 = random.randint(0, len(id_list) - 1)
                 eligibility = is_image_eligible(aug_pick_strategy, prob_list, image_idx_1, image_idx_2, threshold, class_to_augment)
             
+            # Adding the ids of the images already augmented to a list to check against, since we don't want duplicates
             used_comb.append((image_idx_1, image_idx_2))
             
             print("Augmenting the following images:")
@@ -284,6 +284,7 @@ def generate_pseudo_labels(model, device, result_dir, csv_path, class_name, data
             logits1 = torch.from_numpy(logits_list[image_idx_1])
             logits2 = torch.from_numpy(logits_list[image_idx_2])
 
+            # No. of patches the augmented image shall contain. We are taking the min of the two parent images
             k = min(logits1.shape[0], logits2.shape[0])
             print("k: " + str(k))
             
@@ -394,17 +395,17 @@ def save_top_ranking_ordered_patches(model, loader, result_dir, device = torch.d
             patch_logits = patch_logits.detach().cpu().numpy()
             h = h.detach().cpu().numpy()
 
-            if not os.path.isfile(os.path.join(os.path.dirname(result_dir), save_folder_name, str(idx.item()) + ".hdf5")):
+            if not os.path.isfile(os.path.join(os.path.dirname(result_dir), save_folder_name, str(idx[0]) + ".hdf5")):
                 try:
-                    with h5py.File(os.path.join(os.path.dirname(result_dir), save_folder_name, str(idx.item()) + ".hdf5"), "w") as f:
+                    with h5py.File(os.path.join(os.path.dirname(result_dir), save_folder_name, str(idx[0]) + ".hdf5"), "w") as f:
                         dset = f.create_dataset("logits",  data=patch_logits)
                         dset = f.create_dataset("Y_prob",  data=Y_prob)
                         dset = f.create_dataset("label",  data=label.item())
                         dset = f.create_dataset("patches",  data=h)
-                        print("Saved top k sorted patches for WSI " + str(idx.item()))
+                        print("Saved top k sorted patches for WSI " + str(idx[0]))
                         i+=1
                 except Exception as e:
-                    print("Unable to save top k sorted patches for WSI " + str(idx.item()))
+                    print("Unable to save top k sorted patches for WSI " + str(idx[0]))
                     print(e)
 
                 # with h5py.File(os.path.join(os.getcwd(), "aug_patches2", str(idx.item()) + ".hdf5"), "r") as f:
@@ -416,7 +417,7 @@ def save_top_ranking_ordered_patches(model, loader, result_dir, device = torch.d
                 #     print(f["label"][()])
 
             else:
-                print("File " + str(idx.item()) + ".hdf5" + " already present in folder " + save_folder_name + ". Skipping...")
+                print("File " + str(idx[0]) + ".hdf5" + " already present in folder " + save_folder_name + ". Skipping...")
     print("Saved " + str(i) + " files!")
 
 
@@ -459,14 +460,14 @@ def train_loop_clam(epoch, model, loader, optimizer, n_classes=5, bag_weight=0.7
         
         label_value = label.item()
         if mode==0 and augment==True:
-            label_specific_logit = patch_logits[:, label_value:label_value+1]
+            label_specific_logit = patch_logits[:, label_value:label_value+1]   # Taking the logit corresponding to the ground truth
             top_label_specific_logit_index = label_specific_logit.topk(1, dim=0)[1]
 
-            top_1_label_specific_logit = torch.index_select(patch_logits, dim=0, index=top_label_specific_logit_index.squeeze())
+            top_1_label_specific_logit = torch.index_select(patch_logits, dim=0, index=top_label_specific_logit_index.squeeze())     # Taking the top scoring logit
 
             rankmix_loss = loss_fn(top_1_label_specific_logit, label)
 
-            total_loss = bag_weight * loss + (1-(bag_weight/2)) * instance_loss + (1-(bag_weight/2)) * rankmix_loss
+            total_loss = bag_weight * loss + ((1-bag_weight)/2) * instance_loss + ((1-bag_weight)/2) * rankmix_loss
         else:
             total_loss = bag_weight * loss + (1-bag_weight) * instance_loss
 
@@ -477,7 +478,7 @@ def train_loop_clam(epoch, model, loader, optimizer, n_classes=5, bag_weight=0.7
         train_loss += loss_value
         if (batch_idx + 1) % 100 == 0:
             # wandb.log({'batch': batch_idx, 'loss':loss_value,'instance_loss': instance_loss, 'weighted_loss': total_loss.item()})
-            print('batch {}, loss: {:.4f}, instance_loss: {:.4f}, weighted_loss: {:.4f}, '.format(batch_idx, loss_value, instance_loss_value, total_loss.item()) + 
+            print('batch {}, loss: {:.4f}, instance_loss: {:.4f}, rankmix_loss: {:.4f} weighted_loss: {:.4f}, '.format(batch_idx, loss_value, instance_loss_value, rankmix_loss, total_loss.item()) + 
                 'label: {}, bag_size: {}'.format(label.item(), data.size(0)))
 
         error = calculate_error(Y_hat, label)

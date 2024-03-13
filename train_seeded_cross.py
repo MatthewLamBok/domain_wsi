@@ -60,8 +60,9 @@ def main(args):
         os.makedirs(args.log_dir)
     os.environ['WANDB_DIR'] = args.log_dir
     wandb.login()
-    job_type = str.lower(args.class_name) + '_subclass_aug_student_unified_lf'
-    with wandb.init(project= args.name, config=vars(args), sync_tensorboard=True, mode='offline', group="lr=2e-5,epoch=600,early_stopping,", job_type=job_type):
+
+    job_type = str.lower(args.class_name) + '_subclass_aug_teacher_unified_lf'
+    with wandb.init(project= args.name, config=vars(args), sync_tensorboard=True, mode='offline', group="lr=2e-5,epoch=600,early_stopping,60-20-20", job_type=job_type, name="", notes=""):
         stime = time.time()
         path = args.feat_dir
         data_csv = args.csv_path
@@ -79,7 +80,7 @@ def main(args):
 
         if args.mode == 0:
             for data_seed in range(loop):
-                seed_numpy(data_seed)
+                seed_numpy(0)
                 
                 if args.cross_val == 'True':
                     if not args.augment:
@@ -181,9 +182,10 @@ def main(args):
                         writer.add_scalar('final/test_error', test_error, exp_idx)
                         writer.add_scalar('final/test_overall_auc', test_auc, exp_idx)
                         writer.close()
+                # wandb.finish()
         elif args.mode == 1:
             for data_seed in range(loop):
-                seed_numpy(data_seed)
+                seed_numpy(0)
                 train_dataset = dataset.Feature_bag_dataset(root=path, csv_path=data_csv, split_path=args.split_path, fold_num=data_seed, split="train", num_classes = args.n_classes, class_name = args.class_name)
                 # weights = make_weights_for_balanced_classes_split(train_dataset)
                 train_dataloader = DataLoader(train_dataset, num_workers=4, sampler = SequentialSampler(train_dataset))
@@ -218,9 +220,6 @@ def main(args):
                     eval_model.to(device)
                     eval_model.load_state_dict(torch.load(os.path.join(result_dir, "teacher_model.pt")))
                     generate_pseudo_labels(eval_model, device, result_dir, data_csv, args.class_name, train_dataset, lambda_value, 1, aug_pick_strategy=args.aug_pick_strategy)
-
-            
-               
         end_time = time.time()
         print(f"Time taken: {end_time-stime}")
 
